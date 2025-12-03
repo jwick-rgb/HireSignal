@@ -81,6 +81,9 @@ focused deliverable for validating core value.
 4.  App analyzes each posting and displays:
     -   Job title\
     -   Company\
+    -   Location\
+    -   Salary\
+    -   Work Type\
     -   Fit Score\
     -   Missing skills\
     -   "Generate InMail" button\

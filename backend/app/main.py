@@ -81,6 +81,9 @@ class JobPosting(BaseModel):
     company: str
     description: str
     required_skills: List[str]
+    location: Optional[str] = None
+    salary: Optional[str] = None
+    work_type: Optional[str] = None
 
 
 class JobAnalysis(BaseModel):
@@ -147,10 +150,24 @@ def parse_csv(file_bytes: bytes) -> List[str]:
     if not url_key:
         raise HTTPException(status_code=400, detail="CSV must include a 'url' header")
 
-    urls = [row[url_key] for row in reader if row.get(url_key)]
-    if not urls:
+    benefits_key = field_map.get("benefits")
+    workplace_key = field_map.get("workplace type")
+
+    rows = []
+    for row in reader:
+        if not row.get(url_key):
+            continue
+        rows.append(
+            {
+                "url": row.get(url_key, "").strip(),
+                "benefits": (row.get(benefits_key, "") if benefits_key else "").strip(),
+                "workplace_type": (row.get(workplace_key, "") if workplace_key else "").strip(),
+            }
+        )
+
+    if not rows:
         raise HTTPException(status_code=400, detail="CSV must include at least one URL")
-    return urls
+    return rows
 
 
 def extract_skills(text: str) -> List[str]:
@@ -176,7 +193,11 @@ def extract_first(patterns: list[str], text: str) -> Optional[str]:
     return None
 
 
-def fetch_job_from_linkedin(url: str) -> Optional[JobPosting]:
+def fetch_job_from_linkedin(
+    url: str,
+    salary_override: Optional[str] = None,
+    workplace_override: Optional[str] = None,
+) -> Optional[JobPosting]:
     headers = {
         "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
     }
@@ -235,7 +256,53 @@ def fetch_job_from_linkedin(url: str) -> Optional[JobPosting]:
         return None
 
     required_skills = extract_skills(description)
-    logger.info("Parsed LinkedIn job for %s -> %s @ %s", url, title, company)
+
+    location = extract_first(
+        [
+            r'"formattedLocation"\s*:\s*"([^"]+)"',
+            r'"jobLocation"\s*:\s*"([^"]+)"',
+            r'"formattedLocation"\s*:\s*\\"([^"\\]+)',
+            r'<span[^>]*class="[^"]*topcard__flavor--bullet[^"]*"[^>]*>([^<]+)</span>',
+            r'<span[^>]*class="[^"]*topcard__flavor[^"]*"[^>]*>([^<]+)</span>',
+            r'NavigationBarSubtitle&quot;:&quot;[^·]+·\s*([^(&]+)',
+            r'&quot;navigationBarSubtitle&quot;:&quot;[^·]+·\s*([^(&]+)',
+        ],
+        html,
+    )
+
+    # Simple salary extraction: look for "$... - $...yr" patterns; if none, fallback to override or unavailable
+    salary_range_match = re.search(r"\$[^$\\n]{1,40}?-\s*\$[^$\\n]{1,40}?yr", html, flags=re.IGNORECASE)
+    salary = salary_range_match.group(0).strip() if salary_range_match else (salary_override or "Unavailable")
+
+    # Work type: prefer override from CSV, else detect hybrid/remote in html, else unavailable
+    raw_work_type = None
+    work_type_match = re.search(r"\b(Hybrid|Remote|On[- ]?site)\b", html, flags=re.IGNORECASE)
+    if work_type_match:
+        raw_work_type = work_type_match.group(1)
+
+    html_lower = html.lower()
+    hybrid_found = "hybrid" in html_lower
+    normalized_work_type = workplace_override or None
+    if normalized_work_type:
+        normalized_work_type = normalized_work_type.capitalize()
+    else:
+        if hybrid_found:
+            normalized_work_type = "Hybrid"
+        elif "remote" in html_lower:
+            normalized_work_type = "Remote"
+        else:
+            normalized_work_type = "Unavailable"
+
+    logger.info(
+        "Parsed LinkedIn job for %s -> %s @ %s | location=%r salary=%r work_type_raw=%r work_type=%r",
+        url,
+        title,
+        company,
+        location,
+        salary,
+        raw_work_type,
+        normalized_work_type,
+    )
     return JobPosting(
         id=str(uuid.uuid4()),
         url=url,
@@ -243,11 +310,14 @@ def fetch_job_from_linkedin(url: str) -> Optional[JobPosting]:
         company=company,
         description=description,
         required_skills=required_skills,
+        location=location,
+        salary=salary,
+        work_type=normalized_work_type,
     )
 
 
-def get_job(url: str) -> JobPosting:
-    fetched = fetch_job_from_linkedin(url)
+def get_job(url: str, salary_override: Optional[str] = None, workplace_override: Optional[str] = None) -> JobPosting:
+    fetched = fetch_job_from_linkedin(url, salary_override=salary_override, workplace_override=workplace_override)
     if fetched:
         return fetched
 
@@ -263,6 +333,9 @@ def get_job(url: str) -> JobPosting:
         company=mock["company"],
         description=mock["description"],
         required_skills=extract_skills(mock["description"]) or mock["skills"],
+        location=None,
+        salary=salary_override or "Unavailable",
+        work_type=workplace_override.capitalize() if workplace_override else "Unavailable",
     )
 
 
@@ -313,23 +386,38 @@ async def upload_resume(file: UploadFile = File(...)) -> dict:
 @app.post("/upload/csv")
 async def upload_csv(file: UploadFile = File(...)) -> dict:
     contents = await file.read()
-    urls = parse_csv(contents)
-    return {"urls": urls}
+    rows = parse_csv(contents)
+    meta = {row["url"]: {"benefits": row.get("benefits"), "workplace_type": row.get("workplace_type")} for row in rows}
+    urls = [row["url"] for row in rows]
+    return {"urls": urls, "meta": meta}
 
 
 @app.post("/jobs/process")
 async def process_jobs(
     resume_text: str = Form(...),
     urls: str = Form(...),
+    url_meta: Optional[str] = Form(None),
 ) -> dict:
     url_list = [u.strip() for u in urls.split(",") if u.strip()]
     if not url_list:
         raise HTTPException(status_code=400, detail="No URLs provided")
 
+    meta_map = {}
+    if url_meta:
+        try:
+            meta_map = json.loads(url_meta)
+        except json.JSONDecodeError:
+            meta_map = {}
+
     logger.info("Processing %d job URLs", len(url_list))
     analyses: List[JobAnalysis] = []
     for url in url_list:
-        job = get_job(url)
+        meta = meta_map.get(url, {}) if isinstance(meta_map, dict) else {}
+        job = get_job(
+            url,
+            salary_override=meta.get("benefits") or None,
+            workplace_override=meta.get("workplace_type") or None,
+        )
         analysis = compute_fit(job, resume_text)
         analyses.append(analysis)
 

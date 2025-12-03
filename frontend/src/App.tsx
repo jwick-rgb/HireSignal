@@ -10,6 +10,14 @@ type JobPosting = {
   company: string
   description: string
   required_skills: string[]
+  location?: string | null
+  salary?: string | null
+  work_type?: string | null
+}
+
+type CsvMeta = {
+  benefits?: string | null
+  workplace_type?: string | null
 }
 
 type JobAnalysis = {
@@ -54,6 +62,7 @@ const initialLoading: LoadingState = {
 const badgeColors = ['from-cyan-500 to-blue-500', 'from-amber-400 to-orange-500', 'from-emerald-400 to-teal-500']
 
 const formatDate = (date: string) => new Date(date).toLocaleString()
+const displayOrUnavailable = (value?: string | null) => (value && value.trim() ? value : 'Unavailable')
 
 async function api<T>(path: string, options?: RequestInit) {
   const res = await fetch(`${API_BASE}${path}`, options)
@@ -68,6 +77,7 @@ function App() {
   const [resumeText, setResumeText] = useState('')
   const [resumeSkills, setResumeSkills] = useState<string[]>([])
   const [urls, setUrls] = useState<string[]>([])
+  const [urlMeta, setUrlMeta] = useState<Record<string, CsvMeta>>({})
   const [jobs, setJobs] = useState<JobAnalysis[]>([])
   const [materials, setMaterials] = useState<Record<string, GeneratedMaterials>>({})
   const [saved, setSaved] = useState<SavedRecord[]>([])
@@ -118,11 +128,12 @@ function App() {
     try {
       const formData = new FormData()
       formData.append('file', file)
-      const data = await api<{ urls: string[] }>('/upload/csv', {
+      const data = await api<{ urls: string[]; meta: Record<string, CsvMeta> }>('/upload/csv', {
         method: 'POST',
         body: formData,
       })
       setUrls(data.urls)
+      setUrlMeta(data.meta || {})
       updateMessage(`Loaded ${data.urls.length} job URLs`)
     } catch (err) {
       setError((err as Error).message)
@@ -142,6 +153,7 @@ function App() {
       const formData = new FormData()
       formData.append('resume_text', resumeText)
       formData.append('urls', urls.join(','))
+      formData.append('url_meta', JSON.stringify(urlMeta))
       const data = await api<{ jobs: JobAnalysis[] }>('/jobs/process', {
         method: 'POST',
         body: formData,
@@ -314,6 +326,17 @@ function App() {
             <p className="text-xs uppercase tracking-[0.2em] text-white/60">Job</p>
             <h3 className="text-xl font-semibold text-white">{item.job.title}</h3>
             <p className="text-sm text-white/70">{item.job.company}</p>
+            <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-white/70">
+              <span className="rounded-full bg-white/5 px-2 py-1">
+                Location: {displayOrUnavailable(item.job.location)}
+              </span>
+              <span className="rounded-full bg-white/5 px-2 py-1">
+                Salary: {displayOrUnavailable(item.job.salary)}
+              </span>
+              <span className="rounded-full bg-white/5 px-2 py-1">
+                Work: {displayOrUnavailable(item.job.work_type)}
+              </span>
+            </div>
           </div>
           <div className={`rounded-xl bg-gradient-to-br ${gradient} px-3 py-2 text-center text-white`}>
             <p className="text-[10px] uppercase tracking-wide">Fit Score</p>
@@ -511,13 +534,24 @@ function App() {
                     LinkedIn ↗
                   </a>
                 </div>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {record.missing_skills.map((skill) => (
-                    <span key={skill} className="rounded-full bg-white/10 px-2 py-1 text-[11px] text-amber-100">
-                      Missing: {skill}
-                    </span>
-                  ))}
-                </div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {record.missing_skills.map((skill) => (
+                  <span key={skill} className="rounded-full bg-white/10 px-2 py-1 text-[11px] text-amber-100">
+                    Missing: {skill}
+                  </span>
+                ))}
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-white/70">
+                <span className="rounded-full bg-white/5 px-2 py-1">
+                  Location: {displayOrUnavailable(record.job.location)}
+                </span>
+                <span className="rounded-full bg-white/5 px-2 py-1">
+                  Salary: {displayOrUnavailable(record.job.salary)}
+                </span>
+                <span className="rounded-full bg-white/5 px-2 py-1">
+                  Work: {displayOrUnavailable(record.job.work_type)}
+                </span>
+              </div>
                 <div className="mt-3 grid gap-2 text-xs text-white/80">
                   <div className="rounded-xl border border-white/5 bg-black/30 p-3">
                     <p className="text-[10px] uppercase tracking-[0.2em] text-indigo-200/80">InMail</p>
