@@ -534,13 +534,13 @@ function App() {
                     LinkedIn ↗
                   </a>
                 </div>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {record.missing_skills.map((skill) => (
-                  <span key={skill} className="rounded-full bg-white/10 px-2 py-1 text-[11px] text-amber-100">
-                    Missing: {skill}
-                  </span>
-                ))}
-              </div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {record.missing_skills.map((skill) => (
+                    <span key={skill} className="rounded-full bg-white/10 px-2 py-1 text-[11px] text-amber-100">
+                      Missing: {skill}
+                    </span>
+                  ))}
+                </div>
               <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-white/70">
                 <span className="rounded-full bg-white/5 px-2 py-1">
                   Location: {displayOrUnavailable(record.job.location)}

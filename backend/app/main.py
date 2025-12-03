@@ -49,6 +49,76 @@ SKILL_KEYWORDS = [
     "api",
     "graphql",
     "devops",
+    "governance",
+    "audit",
+    "lifecycle management",
+    "modeling",
+    "taxonomy",
+    "chatbot",
+    "voice assistant",
+    "agentic system",
+    "agent",
+    "ux",
+    "consulting",
+    "prompting",
+    "prompt engineering",
+    "workflow design",
+    "risk management",
+    "business intelligence",
+    "advanced analytics",
+    "data science",
+    "team building",
+    "project management",
+    "data visualization",
+    "data model",
+    "etl",
+    "data lake",
+    "data warehouse",
+    "data quality",
+    "data management",
+    "process engineering",
+    "automation",
+    "solution design",
+    "change management",
+    "lean operations",
+    "agile",
+    "finance",
+    "financial reporting",
+    "dashboard",
+    "product strategy",
+    "product management",
+    "product manager",
+    "project manager",
+    "customer engagement",
+    "research",
+    "vendor",
+    "statistic",
+    "hugging",
+    "anthropic",
+    "langchain",
+    "tableau",
+    "power bi",
+    "looker",
+    "gcp",
+    "google cloud",
+    "aws",
+    "bigquery",
+    "vertex",
+    "airflow",
+    "snowflake",
+    "plotly",
+    "qlik",
+    "dbeaver",
+    "elastic",
+    "mongo",
+    "apache",
+    "spark",
+    "azure",
+    "git",
+    "jira",
+    "databricks",
+    "streamlit",
+    "loveable"
 ]
 
 # Mock job records we can fall back to if fetching real content fails.
@@ -346,6 +416,13 @@ def compute_fit(job: JobPosting, resume_text: str) -> JobAnalysis:
     missing = sorted({skill for skill in required if skill not in resume_skills})
     total = len(required) or 1
     fit_score = round((len(matched) / total) * 100, 2)
+    logger.info(
+        "Job skills for %s -> required=%s matched=%s missing=%s",
+        job.url,
+        required,
+        matched,
+        missing,
+    )
     return JobAnalysis(job=job, fit_score=fit_score, matched_skills=matched, missing_skills=missing)
 
 
@@ -380,6 +457,7 @@ async def upload_resume(file: UploadFile = File(...)) -> dict:
     contents = await file.read()
     text = normalize_text(contents, file.filename)
     detected_skills = extract_skills(text)
+    logger.info("Resume skills extracted: %s", detected_skills)
     return {"text": text, "skills": detected_skills}
 
 
@@ -419,6 +497,12 @@ async def process_jobs(
             workplace_override=meta.get("workplace_type") or None,
         )
         analysis = compute_fit(job, resume_text)
+        logger.info(
+            "Fit score for %s -> %s%%; missing skills: %s",
+            url,
+            analysis.fit_score,
+            analysis.missing_skills,
+        )
         analyses.append(analysis)
 
     return {
