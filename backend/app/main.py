@@ -1,12 +1,13 @@
 import csv
 import json
-import os
 import re
+from html import unescape
 import uuid
-from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
+import httpx
+import logging
 from fastapi import Body, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -108,6 +109,9 @@ class SavedRecord(SavePayload):
 
 app = FastAPI(title="HireSignal MVP API")
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("hiresignal")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -134,9 +138,16 @@ def normalize_text(raw: bytes, filename: str) -> str:
 def parse_csv(file_bytes: bytes) -> List[str]:
     decoded = file_bytes.decode(errors="ignore").splitlines()
     reader = csv.DictReader(decoded)
-    if "url" not in reader.fieldnames:
+    if not reader.fieldnames:
         raise HTTPException(status_code=400, detail="CSV must include a 'url' header")
-    urls = [row["url"] for row in reader if row.get("url")]
+
+    # Normalize headers for case-insensitive matching
+    field_map = {name.lower(): name for name in reader.fieldnames}
+    url_key = field_map.get("url")
+    if not url_key:
+        raise HTTPException(status_code=400, detail="CSV must include a 'url' header")
+
+    urls = [row[url_key] for row in reader if row.get(url_key)]
     if not urls:
         raise HTTPException(status_code=400, detail="CSV must include at least one URL")
     return urls
@@ -148,7 +159,100 @@ def extract_skills(text: str) -> List[str]:
     return sorted(found)
 
 
-def get_mock_job(url: str) -> JobPosting:
+def clean_html_to_text(html: str) -> str:
+    # Remove scripts/styles and collapse whitespace for a rough text extraction.
+    html = re.sub(r"(?s)<(script|style).*?>.*?(</\\1>)", " ", html, flags=re.IGNORECASE)
+    text = re.sub(r"<[^>]+>", " ", html)
+    text = re.sub(r"&nbsp;?", " ", text)
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+
+def extract_first(patterns: list[str], text: str) -> Optional[str]:
+    for pattern in patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE | re.MULTILINE)
+        if match:
+            return unescape(match.group(1)).strip()
+    return None
+
+
+def fetch_job_from_linkedin(url: str) -> Optional[JobPosting]:
+    headers = {
+        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+    }
+    try:
+        resp = httpx.get(url, headers=headers, timeout=10.0)
+        resp.raise_for_status()
+    except Exception as exc:
+        logger.warning("Fetch failed for %s: %s", url, exc)
+        return None
+
+    html = resp.text
+    title_patterns = [
+        r'"title"\s*:\s*"([^"]+)"',
+        r'\\"title\\":\\"([^"\\]+)',
+        r'<meta property="og:title"\s+content="([^"]+)"',
+        r'<h1[^>]*class="[^"]*top-card-layout__title[^"]*"[^>]*>([^<]+)</h1>',
+        r'<h1[^>]*class="[^"]*topcard__title[^"]*"[^>]*>([^<]+)</h1>',
+        r"<title>([^<]+)</title>",
+    ]
+    company_patterns = [
+        r'"companyName"\s*:\s*"([^"]+)"',
+        r'\\"companyName\\":\\"([^"\\]+)',
+        r'data-company-name="([^"]+)"',
+        r'"companyUniversalName"\s*:\s*"([^"]+)"',
+        r'"decoratedCompany"\s*:\s*{"name":"([^"]+)"',
+        r'<a[^>]*class="[^"]*top-card-layout__company-url[^"]*"[^>]*>([^<]+)</a>',
+        r'<a[^>]*class="[^"]*topcard__org-name-link[^"]*"[^>]*>([^<]+)</a>',
+        r'<span[^>]*class="[^"]*topcard__flavor[^"]*"[^>]*>([^<]+)</span>',
+    ]
+
+    title = extract_first(title_patterns, html)
+    if title and "|" in title:
+        title = title.split("|")[0].strip()
+
+    company = extract_first(company_patterns, html)
+    if not company and title:
+        company_tag = re.search(r"at\s+([^|<]+)\|", title or "", flags=re.IGNORECASE)
+        if company_tag:
+            company = company_tag.group(1).strip()
+
+    description_match = extract_first(
+        [
+            r'"description"\s*:\s*"(.+?)"',
+            r'\\"description\\":\\"(.+?)\\"',
+            r'<div class="show-more-less-html__markup[^"]*">(.+?)</div>',
+            r'<meta name="description"\s+content="([^"]+)"',
+            r'<meta property="og:description"\s+content="([^"]+)"',
+        ],
+        html,
+    )
+    description_text = description_match if description_match else html
+    description = clean_html_to_text(description_text)
+
+    if not title or not company:
+        logger.info("Missing parsed title/company for %s; falling back to mock", url)
+        return None
+
+    required_skills = extract_skills(description)
+    logger.info("Parsed LinkedIn job for %s -> %s @ %s", url, title, company)
+    return JobPosting(
+        id=str(uuid.uuid4()),
+        url=url,
+        title=title,
+        company=company,
+        description=description,
+        required_skills=required_skills,
+    )
+
+
+def get_job(url: str) -> JobPosting:
+    fetched = fetch_job_from_linkedin(url)
+    if fetched:
+        return fetched
+
+    # Fallback to mocks if fetch/parsing fails.
+    logger.info("Using mock fallback for %s", url)
     mock = MOCK_JOBS[len(url) % len(MOCK_JOBS)]
     slug = url.rstrip("/").split("/")[-1] or "listing"
     generated_title = f"{mock['title']} ({slug})"
@@ -222,9 +326,10 @@ async def process_jobs(
     if not url_list:
         raise HTTPException(status_code=400, detail="No URLs provided")
 
+    logger.info("Processing %d job URLs", len(url_list))
     analyses: List[JobAnalysis] = []
     for url in url_list:
-        job = get_mock_job(url)
+        job = get_job(url)
         analysis = compute_fit(job, resume_text)
         analyses.append(analysis)
 
