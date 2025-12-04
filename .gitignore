@@ -4,5 +4,6 @@ backend/.venv
 __pycache__/
 *.pyc
 backend/db.json
+backend/fetched_pages/
 .DS_Store
 Thumbs.db
