@@ -90,8 +90,8 @@ SKILL_KEYWORDS = [
     "customer engagement",
     "research",
     "vendor",
-    "statistic",
-    "hugging",
+    "statistics",
+    "hugging face",
     "anthropic",
     "langchain",
     "tableau",
@@ -101,7 +101,7 @@ SKILL_KEYWORDS = [
     "google cloud",
     "aws",
     "bigquery",
-    "vertex",
+    "vertex ai",
     "airflow",
     "snowflake",
     "plotly",
@@ -288,6 +288,31 @@ def extract_first(patterns: list[str], text: str) -> Optional[str]:
     return None
 
 
+def format_salary_to_k(value: str) -> str:
+    """
+    Attempt to normalize salary strings like "$265,000.00/yr" or "$265,000 - $275,000/yr" to "$265K/yr".
+    If parsing fails, return the original string.
+    """
+    try:
+        numbers = re.findall(r"\$?\s*([0-9][0-9,\.]+)", value)
+        if not numbers:
+            return value
+
+        def fmt(num_str: str) -> str:
+            num = float(num_str.replace(",", ""))
+            k_val = int(round(num / 1000))
+            return f"${k_val}K"
+
+        suffix_part = "/yr" if "yr" in value.lower() else ""
+        if len(numbers) >= 2:
+            first, second = fmt(numbers[0]), fmt(numbers[1])
+            return f"{first}{suffix_part} - {second}{suffix_part}"
+        else:
+            return f"{fmt(numbers[0])}{suffix_part}"
+    except Exception:
+        return value
+
+
 def fetch_job_from_linkedin(
     url: str,
     salary_override: Optional[str] = None,
@@ -370,7 +395,8 @@ def fetch_job_from_linkedin(
 
     # Simple salary extraction: look for "$... - $...yr" patterns; if none, fallback to override or unavailable
     salary_range_match = re.search(r"\$[^$\\n]{1,40}?-\s*\$[^$\\n]{1,40}?yr", html, flags=re.IGNORECASE)
-    salary = salary_range_match.group(0).strip() if salary_range_match else (salary_override or "Unavailable")
+    raw_salary = salary_range_match.group(0).strip() if salary_range_match else (salary_override or "Unavailable")
+    salary = format_salary_to_k(raw_salary) if raw_salary.lower() != "unavailable" else "Unavailable"
 
     # Work type: prefer override from CSV, else detect hybrid/remote in html, else unavailable
     raw_work_type = None
@@ -443,7 +469,7 @@ def compute_fit(job: JobPosting, resume_text: str) -> JobAnalysis:
     matched = sorted({skill for skill in required if skill in resume_skills})
     missing = sorted({skill for skill in required if skill not in resume_skills})
     total = len(required) or 1
-    fit_score = round((len(matched) / total) * 100, 2)
+    fit_score = round((len(matched) / total) * 100)
     logger.info(
         "Job skills for %s -> required=%s matched=%s missing=%s",
         job.url,
