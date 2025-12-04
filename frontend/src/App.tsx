@@ -83,6 +83,7 @@ function App() {
   const [jobs, setJobs] = useState<JobAnalysis[]>([])
   const [materials, setMaterials] = useState<Record<string, GeneratedMaterials>>({})
   const [materialsOpen, setMaterialsOpen] = useState<Record<string, boolean>>({})
+  const [skillsExpanded, setSkillsExpanded] = useState(false)
   const [saved, setSaved] = useState<SavedRecord[]>([])
   const [loading, setLoading] = useState<LoadingState>(initialLoading)
   const [error, setError] = useState<string | null>(null)
@@ -293,7 +294,9 @@ function App() {
   }) => {
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       const selected = e.target.files?.[0]
-      if (selected) onFile(selected)
+      if (selected) {
+        onFile(selected)
+      }
     }
     return (
       <label className="block w-full rounded-2xl border border-white/10 bg-white/5 p-4 text-white transition hover:border-indigo-400/60 hover:bg-white/10">
@@ -311,6 +314,10 @@ function App() {
           accept={accept}
           className="hidden"
           onChange={handleChange}
+          onClick={(e) => {
+            // Clear value so selecting the same file immediately triggers onChange.
+            ;(e.target as HTMLInputElement).value = ''
+          }}
           disabled={busy}
         />
       </label>
@@ -500,7 +507,25 @@ function App() {
                         {skill}
                       </span>
                     ))}
-                    {resumeSkills.length > 6 && <span className="text-white/50">+ more</span>}
+                    {resumeSkills.length > 6 && (
+                      <button
+                        className="text-white/50 underline underline-offset-2"
+                        onClick={() => setSkillsExpanded((prev) => !prev)}
+                      >
+                        {skillsExpanded ? 'less' : '+more'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+              {skillsExpanded && (
+                <div className="max-h-48 w-full overflow-y-auto rounded-xl border border-white/10 bg-black/30 p-3 text-xs text-white/80">
+                  <div className="flex flex-wrap gap-2">
+                    {resumeSkills.map((skill) => (
+                      <span key={skill} className="rounded-full bg-white/10 px-2 py-1">
+                        {skill}
+                      </span>
+                    ))}
                   </div>
                 </div>
               )}
