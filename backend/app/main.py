@@ -1,8 +1,9 @@
 import csv
+import io
 import json
 import re
-from html import unescape
 import uuid
+from html import unescape
 from pathlib import Path
 from typing import List, Optional
 
@@ -45,7 +46,6 @@ SKILL_KEYWORDS = [
     "tailwind",
     "css",
     "html",
-    "rest",
     "api",
     "graphql",
     "devops",
@@ -87,8 +87,6 @@ SKILL_KEYWORDS = [
     "dashboard",
     "product strategy",
     "product management",
-    "product manager",
-    "project manager",
     "customer engagement",
     "research",
     "vendor",
@@ -200,7 +198,34 @@ def init_db() -> None:
 
 
 def normalize_text(raw: bytes, filename: str) -> str:
-    text = raw.decode(errors="ignore")
+    name_lower = filename.lower()
+    text: Optional[str] = None
+
+    # PDF extraction
+    if name_lower.endswith(".pdf"):
+        try:
+            import PyPDF2  # type: ignore
+
+            reader = PyPDF2.PdfReader(io.BytesIO(raw))
+            pages = [page.extract_text() or "" for page in reader.pages]
+            text = "\n".join(pages)
+        except Exception as exc:
+            logger.warning("PDF parse failed for %s: %s", filename, exc)
+
+    # DOCX extraction
+    if text is None and name_lower.endswith(".docx"):
+        try:
+            import docx  # type: ignore
+
+            doc = docx.Document(io.BytesIO(raw))
+            text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
+        except Exception as exc:
+            logger.warning("DOCX parse failed for %s: %s", filename, exc)
+
+    # Fallback to plain decode
+    if text is None:
+        text = raw.decode(errors="ignore")
+
     # Basic cleanup to trim noisy whitespace
     text = re.sub(r"\s+", " ", text)
     if not text.strip():
@@ -325,7 +350,10 @@ def fetch_job_from_linkedin(
         logger.info("Missing parsed title/company for %s; falling back to mock", url)
         return None
 
-    required_skills = extract_skills(description)
+    # Extract skills from both the cleaned description and the full HTML to avoid missing context.
+    required_skills = sorted(
+        set(extract_skills(description)) | set(extract_skills(clean_html_to_text(html)))
+    )
 
     location = extract_first(
         [
@@ -457,6 +485,11 @@ async def upload_resume(file: UploadFile = File(...)) -> dict:
     contents = await file.read()
     text = normalize_text(contents, file.filename)
     detected_skills = extract_skills(text)
+    try:
+        # Write normalized text for legibility
+        Path("resume_extracted.txt").write_text(text, encoding="utf-8", errors="ignore")
+    except Exception as exc:  # pragma: no cover
+        logger.warning("Failed to persist extracted resume text: %s", exc)
     logger.info("Resume skills extracted: %s", detected_skills)
     return {"text": text, "skills": detected_skills}
 
