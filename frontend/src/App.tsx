@@ -14,6 +14,7 @@ type JobPosting = {
   salary?: string | null
   work_type?: string | null
   contact_person?: string | null
+  posted_at?: string | null
 }
 
 type CsvMeta = {
@@ -335,6 +336,11 @@ function App() {
                   Contact: {item.job.contact_person}
                 </span>
               )}
+              {item.job.posted_at && (
+                <span className="rounded-full bg-white/5 px-2 py-1">
+                  Posted: {item.job.posted_at}
+                </span>
+              )}
               <span className="rounded-full bg-white/5 px-2 py-1">
                 Location: {displayOrUnavailable(item.job.location)}
               </span>
@@ -351,9 +357,25 @@ function App() {
             <p className="text-xl font-bold">{item.fit_score}%</p>
           </div>
         </div>
-        <p className="mt-3 text-sm text-white/70 max-h-24 overflow-hidden text-ellipsis">
-          {item.job.description}
+        <p
+          className={`mt-3 text-sm text-white/70 leading-6 pr-1 whitespace-pre-line ${
+            materialsOpen[item.job.id] ? 'max-h-[28rem] overflow-y-auto' : 'max-h-48 overflow-hidden text-ellipsis'
+          }`}
+        >
+          {item.job.description
+            ?.replace(/Posted\s+\d{1,2}:\d{2}:\d{2}\s+(AM|PM)\.?\s*/gi, '')
+            ?.replace(/See this and similar jobs on LinkedIn\.?/gi, '')}
         </p>
+        {item.job.description && item.job.description.length > 240 && (
+          <button
+            className="mt-2 text-xs font-semibold text-indigo-200 hover:text-indigo-100"
+            onClick={() =>
+              setMaterialsOpen((state) => ({ ...state, [item.job.id]: !(materialsOpen[item.job.id] ?? false) }))
+            }
+          >
+            {materialsOpen[item.job.id] ? 'Less' : 'More'}
+          </button>
+        )}
 
         <div className="mt-4 flex flex-wrap gap-2">
           {item.missing_skills.length ? (
@@ -566,6 +588,11 @@ function App() {
                 {record.job.contact_person && (
                   <div className="mt-2 text-[11px] text-white/70">
                     Contact: {record.job.contact_person}
+                  </div>
+                )}
+                {record.job.posted_at && (
+                  <div className="text-[11px] text-white/70">
+                    Posted: {record.job.posted_at}
                   </div>
                 )}
               <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-white/70">

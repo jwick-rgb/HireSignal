@@ -158,6 +158,7 @@ class JobPosting(BaseModel):
     salary: Optional[str] = None
     work_type: Optional[str] = None
     contact_person: Optional[str] = None
+    posted_at: Optional[str] = None
 
 
 class JobAnalysis(BaseModel):
@@ -294,7 +295,7 @@ def clean_html_to_text(html: str) -> str:
 
 def extract_first(patterns: list[str], text: str) -> Optional[str]:
     for pattern in patterns:
-        match = re.search(pattern, text, flags=re.IGNORECASE | re.MULTILINE)
+        match = re.search(pattern, text, flags=re.IGNORECASE | re.MULTILINE | re.DOTALL)
         if match:
             return unescape(match.group(1)).strip()
     return None
@@ -354,6 +355,13 @@ def clean_job_title(title: str) -> str:
                 t = at_match.group(1)
     t = re.sub(r"\s+in\s+[^,]+$", "", t, flags=re.IGNORECASE)
     return t.strip(" ,")
+
+
+def sanitize_description(text: str) -> str:
+    # Remove noisy "Posted HH:MM:SS AM/PM" and LinkedIn boilerplate.
+    text = re.sub(r"Posted\s+\d{1,2}:\d{2}:\d{2}\s+(AM|PM)\.?\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"See this and similar jobs on LinkedIn\.?", "", text, flags=re.IGNORECASE)
+    return text.strip()
 
 
 def fetch_job_from_linkedin(
@@ -418,7 +426,7 @@ def fetch_job_from_linkedin(
         html,
     )
     description_text = description_match if description_match else html
-    description = clean_html_to_text(description_text)
+    description = sanitize_description(clean_html_to_text(description_text))
 
     if not title or not company:
         logger.info("Missing parsed title/company for %s; falling back to mock", url)
@@ -427,6 +435,13 @@ def fetch_job_from_linkedin(
     # Extract skills from both the cleaned description and the full HTML to avoid missing context.
     required_skills = sorted(
         set(extract_skills(description)) | set(extract_skills(clean_html_to_text(html)))
+    )
+
+    posted_at = extract_first(
+        [
+            r'<time[^>]*datetime="([^"]+)"',
+        ],
+        html,
     )
 
     contact_person = extract_first(
@@ -496,6 +511,7 @@ def fetch_job_from_linkedin(
         salary=salary,
         work_type=normalized_work_type,
         contact_person=contact_person,
+        posted_at=posted_at,
     )
 
 
