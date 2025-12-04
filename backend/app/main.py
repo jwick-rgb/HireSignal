@@ -16,6 +16,7 @@ from pydantic import BaseModel
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DB_PATH = BASE_DIR / "db.json"
+FETCHED_DIR = BASE_DIR / "fetched_pages"
 
 
 # Simple keyword list for the MVP; extend in later iterations.
@@ -152,6 +153,7 @@ class JobPosting(BaseModel):
     location: Optional[str] = None
     salary: Optional[str] = None
     work_type: Optional[str] = None
+    contact_person: Optional[str] = None
 
 
 class JobAnalysis(BaseModel):
@@ -195,6 +197,8 @@ app.add_middleware(
 def init_db() -> None:
     if not DB_PATH.exists():
         DB_PATH.write_text("[]", encoding="utf-8")
+    if not FETCHED_DIR.exists():
+        FETCHED_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def normalize_text(raw: bytes, filename: str) -> str:
@@ -329,6 +333,12 @@ def fetch_job_from_linkedin(
         return None
 
     html = resp.text
+    # Persist fetched HTML for debugging/comparison
+    try:
+        safe_name = url.replace("://", "_").replace("/", "_")
+        (FETCHED_DIR / f"{safe_name}.html").write_text(html, encoding="utf-8", errors="ignore")
+    except Exception as exc:  # pragma: no cover - best effort
+        logger.warning("Failed to persist fetched HTML for %s: %s", url, exc)
     title_patterns = [
         r'"title"\s*:\s*"([^"]+)"',
         r'\\"title\\":\\"([^"\\]+)',
@@ -378,6 +388,15 @@ def fetch_job_from_linkedin(
     # Extract skills from both the cleaned description and the full HTML to avoid missing context.
     required_skills = sorted(
         set(extract_skills(description)) | set(extract_skills(clean_html_to_text(html)))
+    )
+
+    contact_person = extract_first(
+        [
+            r'aria-label="Message\s+([^"]+)"',
+            r"aria-label='Message\s+([^']+)'",
+            r'Message\s+([A-Za-z][A-Za-z\\s\\-\\\']+)</',
+        ],
+        html,
     )
 
     location = extract_first(
@@ -437,6 +456,7 @@ def fetch_job_from_linkedin(
         location=location,
         salary=salary,
         work_type=normalized_work_type,
+        contact_person=contact_person,
     )
 
 

@@ -13,6 +13,7 @@ type JobPosting = {
   location?: string | null
   salary?: string | null
   work_type?: string | null
+  contact_person?: string | null
 }
 
 type CsvMeta = {
@@ -327,6 +328,11 @@ function App() {
             <h3 className="text-xl font-semibold text-white">{item.job.title}</h3>
             <p className="text-sm text-white/70">{item.job.company}</p>
             <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-white/70">
+              {item.job.contact_person && (
+                <span className="rounded-full bg-indigo-500/20 px-2 py-1">
+                  Contact: {item.job.contact_person}
+                </span>
+              )}
               <span className="rounded-full bg-white/5 px-2 py-1">
                 Location: {displayOrUnavailable(item.job.location)}
               </span>
@@ -541,6 +547,11 @@ function App() {
                     </span>
                   ))}
                 </div>
+                {record.job.contact_person && (
+                  <div className="mt-2 text-[11px] text-white/70">
+                    Contact: {record.job.contact_person}
+                  </div>
+                )}
               <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-white/70">
                 <span className="rounded-full bg-white/5 px-2 py-1">
                   Location: {displayOrUnavailable(record.job.location)}
