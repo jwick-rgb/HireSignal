@@ -81,6 +81,7 @@ function App() {
   const [urlMeta, setUrlMeta] = useState<Record<string, CsvMeta>>({})
   const [jobs, setJobs] = useState<JobAnalysis[]>([])
   const [materials, setMaterials] = useState<Record<string, GeneratedMaterials>>({})
+  const [materialsOpen, setMaterialsOpen] = useState<Record<string, boolean>>({})
   const [saved, setSaved] = useState<SavedRecord[]>([])
   const [loading, setLoading] = useState<LoadingState>(initialLoading)
   const [error, setError] = useState<string | null>(null)
@@ -196,6 +197,7 @@ function App() {
         ...state,
         [jobId]: { inmail: inmailResp.inmail, cover_letter: coverResp.cover_letter },
       }))
+      setMaterialsOpen((state) => ({ ...state, [jobId]: true }))
       updateMessage('Content generated')
     } catch (err) {
       setError((err as Error).message)
@@ -390,19 +392,33 @@ function App() {
           </button>
         </div>
 
-        {mat && (
+        {mat && materialsOpen[item.job.id] !== false && (
           <div className="mt-4 grid gap-3 rounded-2xl border border-white/10 bg-black/30 p-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs uppercase tracking-[0.2em] text-indigo-200/80">InMail</p>
+              <button
+                onClick={() => setMaterialsOpen((state) => ({ ...state, [item.job.id]: false }))}
+                className="text-xs text-white/60 hover:text-white"
+              >
+                X
+              </button>
+            </div>
+            <p className="text-sm text-white/80 whitespace-pre-line">{mat.inmail}</p>
             <div>
               <div className="flex items-center justify-between">
-                <p className="text-xs uppercase tracking-[0.2em] text-indigo-200/80">InMail</p>
+                <p className="text-xs uppercase tracking-[0.2em] text-indigo-200/80">Cover Letter</p>
               </div>
-              <p className="text-sm text-white/80 whitespace-pre-line">{mat.inmail}</p>
-            </div>
-            <div>
-              <p className="text-xs uppercase tracking-[0.2em] text-indigo-200/80">Cover Letter</p>
               <p className="text-sm text-white/80 whitespace-pre-line">{mat.cover_letter}</p>
             </div>
           </div>
+        )}
+        {mat && materialsOpen[item.job.id] === false && (
+          <button
+            className="mt-3 rounded-xl border border-white/15 px-3 py-2 text-xs font-semibold text-white/80 hover:border-indigo-400/60"
+            onClick={() => setMaterialsOpen((state) => ({ ...state, [item.job.id]: true }))}
+          >
+            Reopen InMail + Cover Letter
+          </button>
         )}
       </div>
     )

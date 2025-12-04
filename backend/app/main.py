@@ -3,6 +3,7 @@ import io
 import json
 import re
 import uuid
+from datetime import datetime
 from html import unescape
 from pathlib import Path
 from typing import List, Optional
@@ -15,7 +16,10 @@ from pydantic import BaseModel
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+ROOT_DIR = BASE_DIR.parent
 DB_PATH = BASE_DIR / "db.json"
+INMAIL_TEMPLATE = ROOT_DIR / "templates" / "emails" / "inmail.md"
+COVER_TEMPLATE = ROOT_DIR / "templates" / "cover_letters" / "cover_letter.md"
 FETCHED_DIR = BASE_DIR / "fetched_pages"
 
 
@@ -199,6 +203,10 @@ def init_db() -> None:
         DB_PATH.write_text("[]", encoding="utf-8")
     if not FETCHED_DIR.exists():
         FETCHED_DIR.mkdir(parents=True, exist_ok=True)
+    if not INMAIL_TEMPLATE.exists():
+        INMAIL_TEMPLATE.parent.mkdir(parents=True, exist_ok=True)
+    if not COVER_TEMPLATE.exists():
+        COVER_TEMPLATE.parent.mkdir(parents=True, exist_ok=True)
 
 
 def normalize_text(raw: bytes, filename: str) -> str:
@@ -292,6 +300,19 @@ def extract_first(patterns: list[str], text: str) -> Optional[str]:
     return None
 
 
+def get_salutation(job: JobPosting) -> str:
+    if job.contact_person:
+        return job.contact_person
+    return f"{job.company} hiring team"
+
+
+def load_template(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except Exception:
+        return ""
+
+
 def format_salary_to_k(value: str) -> str:
     """
     Attempt to normalize salary strings like "$265,000.00/yr" or "$265,000 - $275,000/yr" to "$265K/yr".
@@ -315,6 +336,24 @@ def format_salary_to_k(value: str) -> str:
             return f"{fmt(numbers[0])}{suffix_part}"
     except Exception:
         return value
+
+
+def clean_job_title(title: str) -> str:
+    """Strip company/location phrases from scraped job titles for messaging."""
+    t = title.strip()
+    hiring_in = re.search(r"hiring\s+(.+?)\s+in\s+.+", t, flags=re.IGNORECASE)
+    if hiring_in:
+        t = hiring_in.group(1)
+    else:
+        hiring_only = re.search(r"hiring\s+(.+)", t, flags=re.IGNORECASE)
+        if hiring_only:
+            t = hiring_only.group(1)
+        else:
+            at_match = re.search(r"(.+?)\s+at\s+.+", t, flags=re.IGNORECASE)
+            if at_match:
+                t = at_match.group(1)
+    t = re.sub(r"\s+in\s+[^,]+$", "", t, flags=re.IGNORECASE)
+    return t.strip(" ,")
 
 
 def fetch_job_from_linkedin(
@@ -501,24 +540,43 @@ def compute_fit(job: JobPosting, resume_text: str) -> JobAnalysis:
 
 
 def generate_inmail(job: JobPosting, resume_text: str, matched_skills: List[str]) -> str:
-    highlights = ", ".join(matched_skills[:3]) if matched_skills else "relevant experience"
-    return (
-        f"Hi {job.company} team,\n"
-        f"I'm excited about the {job.title} role. I bring {highlights} and have shipped products "
-        f"that align with your needs. I'd appreciate the chance to discuss how I can help. "
-        f"Thanks for your time."
+    salutation = get_salutation(job)
+    clean_title = clean_job_title(job.title)
+    template = load_template(INMAIL_TEMPLATE)
+    if not template:
+        highlights = ", ".join(matched_skills[:3]) if matched_skills else "relevant experience"
+        logger.info("InMail template missing; using fallback copy")
+        return (
+            f"Hello {salutation},\n"
+            f"I'm excited about the {clean_title} role at {job.company}. I bring {highlights} and have shipped products "
+            f"that align with your needs. Job link: {job.url}"
+        )
+    populated = (
+        template.replace("<job title>", clean_title)
+        .replace("<contact>", salutation)
+        .replace("<company>", job.company)
+        .replace("<job url>", job.url)
     )
+    return populated
 
 
 def generate_cover_letter(job: JobPosting, resume_text: str, matched_skills: List[str]) -> str:
-    skills_text = ", ".join(matched_skills[:5]) if matched_skills else "relevant technical experience"
-    return (
-        f"Dear {job.company} Hiring Team,\n\n"
-        f"I am applying for the {job.title} position. My background includes {skills_text}, "
-        f"and I have delivered outcomes in similar environments.\n\n"
-        f"I am motivated by {job.company}'s mission and would welcome the opportunity to contribute. "
-        f"Thank you for your consideration.\n"
+    clean_title = clean_job_title(job.title)
+    template = load_template(COVER_TEMPLATE)
+    today = datetime.now().strftime("%B %d, %Y")
+    if not template:
+        skills_text = ", ".join(matched_skills[:5]) if matched_skills else "relevant technical experience"
+        logger.info("Cover letter template missing; using fallback copy")
+        return (
+            f"I am applying for the {clean_title} position at {job.company}. My background includes {skills_text}.\n\n"
+            f"Thank you for your consideration.\n"
+        )
+    populated = (
+        template.replace("<current date>", today)
+        .replace("<company>", job.company)
+        .replace("<job title>", clean_title)
     )
+    return populated
 
 
 @app.on_event("startup")
