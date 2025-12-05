@@ -636,6 +636,15 @@ async def process_jobs(
     if not url_list:
         raise HTTPException(status_code=400, detail="No URLs provided")
 
+    # Clear previously fetched pages to avoid stale debugging artifacts
+    if FETCHED_DIR.exists():
+        for path in FETCHED_DIR.iterdir():
+            if path.is_file():
+                try:
+                    path.unlink()
+                except Exception as exc:  # pragma: no cover - best effort cleanup
+                    logger.warning("Could not delete fetched file %s: %s", path, exc)
+
     meta_map = {}
     if url_meta:
         try:
