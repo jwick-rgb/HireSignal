@@ -119,9 +119,11 @@ SKILL_KEYWORDS = [
     "azure",
     "git",
     "jira",
+    "saas",
     "databricks",
     "streamlit",
-    "loveable"
+    "loveable",
+    "deep learning"
 ]
 
 # Mock job records we can fall back to if fetching real content fails.
