@@ -1,3 +1,4 @@
+// testing here
 import React, { useEffect, useMemo, useState } from 'react'
 import './index.css'
 
@@ -85,6 +86,7 @@ function App() {
   const [csvInputKey, setCsvInputKey] = useState(() => Date.now() + 1)
   const [jobs, setJobs] = useState<JobAnalysis[]>([])
   const [materials, setMaterials] = useState<Record<string, GeneratedMaterials>>({})
+  const [materialsDraft, setMaterialsDraft] = useState<Record<string, GeneratedMaterials>>({})
   const [materialsOpen, setMaterialsOpen] = useState<Record<string, boolean>>({})
   const [descriptionOpen, setDescriptionOpen] = useState<Record<string, boolean>>({})
   const [skillsExpanded, setSkillsExpanded] = useState(false)
@@ -200,6 +202,10 @@ function App() {
         }),
       ])
       setMaterials((state) => ({
+        ...state,
+        [jobId]: { inmail: inmailResp.inmail, cover_letter: coverResp.cover_letter },
+      }))
+      setMaterialsDraft((state) => ({
         ...state,
         [jobId]: { inmail: inmailResp.inmail, cover_letter: coverResp.cover_letter },
       }))
@@ -424,25 +430,76 @@ const UploadZone = ({
             <div className="flex items-center justify-between">
               <p className="text-xs uppercase tracking-[0.2em] text-indigo-200/80">InMail</p>
               <button
-                onClick={() => setMaterialsOpen((state) => ({ ...state, [item.job.id]: false }))}
+                onClick={() => {
+                  const draft = materialsDraft[item.job.id] || mat
+                  setMaterials((state) => ({ ...state, [item.job.id]: draft }))
+                  setMaterialsOpen((state) => ({ ...state, [item.job.id]: false }))
+                }}
                 className="text-xs text-white/60 hover:text-white"
               >
                 X
               </button>
             </div>
-            <p className="text-sm text-white/80 whitespace-pre-line">{mat.inmail}</p>
+            <div className="flex justify-end">
+              <button
+                className="text-[11px] font-semibold text-indigo-200 hover:text-indigo-100"
+                onClick={() => handleCopy((materialsDraft[item.job.id] || mat).inmail)}
+              >
+                Copy
+              </button>
+            </div>
+            <textarea
+              className="w-full rounded-xl border border-white/10 bg-black/40 p-2 text-sm text-white/80"
+              rows={6}
+              value={(materialsDraft[item.job.id] || mat).inmail}
+              onChange={(e) =>
+                setMaterialsDraft((state) => ({
+                  ...state,
+                  [item.job.id]: {
+                    ...((state[item.job.id] as GeneratedMaterials) || mat),
+                    inmail: e.target.value,
+                  },
+                }))
+              }
+            />
             <div>
               <div className="flex items-center justify-between">
                 <p className="text-xs uppercase tracking-[0.2em] text-indigo-200/80">Cover Letter</p>
               </div>
-              <p className="text-sm text-white/80 whitespace-pre-line">{mat.cover_letter}</p>
+              <div className="flex justify-end">
+                <button
+                  className="text-[11px] font-semibold text-indigo-200 hover:text-indigo-100"
+                  onClick={() => handleCopy((materialsDraft[item.job.id] || mat).cover_letter)}
+                >
+                  Copy
+                </button>
+              </div>
+              <textarea
+                className="mt-1 w-full rounded-xl border border-white/10 bg-black/40 p-2 text-sm text-white/80"
+                rows={10}
+                value={(materialsDraft[item.job.id] || mat).cover_letter}
+                onChange={(e) =>
+                  setMaterialsDraft((state) => ({
+                    ...state,
+                    [item.job.id]: {
+                      ...((state[item.job.id] as GeneratedMaterials) || mat),
+                      cover_letter: e.target.value,
+                    },
+                  }))
+                }
+              />
             </div>
           </div>
         )}
         {mat && materialsOpen[item.job.id] === false && (
           <button
             className="mt-3 rounded-xl border border-white/15 px-3 py-2 text-xs font-semibold text-white/80 hover:border-indigo-400/60"
-            onClick={() => setMaterialsOpen((state) => ({ ...state, [item.job.id]: true }))}
+            onClick={() => {
+              if (!materialsDraft[item.job.id]) {
+                setMaterialsDraft((state) => ({ ...state, [item.job.id]: mat }))
+              }
+              setMaterialsOpen((state) => ({ ...state, [item.job.id]: true }))
+            }}
           >
             Reopen InMail + Cover Letter
           </button>
@@ -646,11 +703,27 @@ const UploadZone = ({
                     <summary className="cursor-pointer text-indigo-200">InMail + Cover Letter</summary>
                     <div className="mt-2 grid gap-2">
                       <div className="rounded-xl border border-white/5 bg-black/30 p-3">
-                        <p className="text-[10px] uppercase tracking-[0.2em] text-indigo-200/80">InMail</p>
+                        <div className="flex items-center justify-between">
+                          <p className="text-[10px] uppercase tracking-[0.2em] text-indigo-200/80">InMail</p>
+                          <button
+                            className="text-[11px] font-semibold text-indigo-200 hover:text-indigo-100"
+                            onClick={() => handleCopy(record.generated.inmail)}
+                          >
+                            Copy
+                          </button>
+                        </div>
                         <p className="mt-1 whitespace-pre-line">{record.generated.inmail}</p>
                       </div>
                       <div className="rounded-xl border border-white/5 bg-black/30 p-3">
-                        <p className="text-[10px] uppercase tracking-[0.2em] text-indigo-200/80">Cover Letter</p>
+                        <div className="flex items-center justify-between">
+                          <p className="text-[10px] uppercase tracking-[0.2em] text-indigo-200/80">Cover Letter</p>
+                          <button
+                            className="text-[11px] font-semibold text-indigo-200 hover:text-indigo-100"
+                            onClick={() => handleCopy(record.generated.cover_letter)}
+                          >
+                            Copy
+                          </button>
+                        </div>
                         <p className="mt-1 whitespace-pre-line">{record.generated.cover_letter}</p>
                       </div>
                     </div>
@@ -666,3 +739,11 @@ const UploadZone = ({
 }
 
 export default App
+    const handleCopy = async (text: string) => {
+      try {
+        await navigator.clipboard.writeText(text)
+        updateMessage('Copied to clipboard')
+      } catch (err) {
+        setError('Copy failed')
+      }
+    }
