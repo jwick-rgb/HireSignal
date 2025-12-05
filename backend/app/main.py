@@ -179,12 +179,13 @@ class SavePayload(BaseModel):
     job: JobPosting
     fit_score: float
     missing_skills: List[str]
-    generated: GeneratedMaterials
+    generated: Optional[GeneratedMaterials] = None
     timestamp: str
 
 
 class SavedRecord(SavePayload):
     id: str
+    has_generated: bool = False
 
 
 app = FastAPI(title="HireSignal MVP API")
@@ -688,7 +689,13 @@ async def generate_cover_letter_endpoint(
 def read_saved() -> List[SavedRecord]:
     init_db()
     with DB_PATH.open("r", encoding="utf-8") as f:
-        return [SavedRecord.model_validate(entry) for entry in json.load(f)]
+        entries = json.load(f)
+        hydrated = []
+        for entry in entries:
+            if "has_generated" not in entry:
+                entry["has_generated"] = bool(entry.get("generated"))
+            hydrated.append(SavedRecord.model_validate(entry))
+        return hydrated
 
 
 def write_saved(records: List[SavedRecord]) -> None:
@@ -704,7 +711,8 @@ async def get_saved() -> List[SavedRecord]:
 @app.post("/save", response_model=SavedRecord)
 async def save_application(payload: SavePayload) -> SavedRecord:
     records = read_saved()
-    new_record = SavedRecord(id=str(uuid.uuid4()), **payload.model_dump())
+    has_generated = payload.generated is not None
+    new_record = SavedRecord(id=str(uuid.uuid4()), has_generated=has_generated, **payload.model_dump())
     records.append(new_record)
     write_saved(records)
     return new_record
@@ -713,11 +721,11 @@ async def save_application(payload: SavePayload) -> SavedRecord:
 @app.get("/saved/export")
 async def export_saved() -> dict:
     records = read_saved()
-    csv_lines = ["job_title,company,fit_score,missing_skills,linkedin_url,timestamp"]
+    csv_lines = ["job_title,company,fit_score,missing_skills,linkedin_url,timestamp,has_generated"]
     for record in records:
         csv_lines.append(
             f"\"{record.job.title}\",\"{record.job.company}\",{record.fit_score},"
-            f"\"{'|'.join(record.missing_skills)}\",\"{record.job.url}\",\"{record.timestamp}\""
+            f"\"{'|'.join(record.missing_skills)}\",\"{record.job.url}\",\"{record.timestamp}\",{record.has_generated}"
         )
     csv_content = "\n".join(csv_lines)
     return {"csv": csv_content}

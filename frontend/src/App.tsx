@@ -40,6 +40,7 @@ type SavedRecord = {
   fit_score: number
   missing_skills: string[]
   generated: GeneratedMaterials
+  has_generated: boolean
   timestamp: string
 }
 
@@ -80,9 +81,12 @@ function App() {
   const [resumeSkills, setResumeSkills] = useState<string[]>([])
   const [urls, setUrls] = useState<string[]>([])
   const [urlMeta, setUrlMeta] = useState<Record<string, CsvMeta>>({})
+  const [resumeInputKey, setResumeInputKey] = useState(() => Date.now())
+  const [csvInputKey, setCsvInputKey] = useState(() => Date.now() + 1)
   const [jobs, setJobs] = useState<JobAnalysis[]>([])
   const [materials, setMaterials] = useState<Record<string, GeneratedMaterials>>({})
   const [materialsOpen, setMaterialsOpen] = useState<Record<string, boolean>>({})
+  const [descriptionOpen, setDescriptionOpen] = useState<Record<string, boolean>>({})
   const [skillsExpanded, setSkillsExpanded] = useState(false)
   const [saved, setSaved] = useState<SavedRecord[]>([])
   const [loading, setLoading] = useState<LoadingState>(initialLoading)
@@ -212,16 +216,7 @@ function App() {
     const analysis = jobs.find((j) => j.job.id === jobId)
     if (!analysis) return
 
-    // Generate content if it isn't available yet.
-    if (!materials[jobId]) {
-      await generateForJob(jobId)
-    }
-
-    const generated = materials[jobId]
-    if (!generated) {
-      setError('Could not generate materials to save this posting.')
-      return
-    }
+    const generated = materials[jobId] || null
 
     setLoading((state) => ({ ...state, saveId: jobId }))
     setError(null)
@@ -279,50 +274,53 @@ function App() {
     }
   }
 
-  const UploadZone = ({
-    label,
-    accept,
-    onFile,
-    busy,
-    helper,
-  }: {
-    label: string
-    accept: string
-    onFile: (file: File) => void
-    busy: boolean
-    helper: string
-  }) => {
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-      const selected = e.target.files?.[0]
-      if (selected) {
-        onFile(selected)
-      }
-    }
-    return (
-      <label className="block w-full rounded-2xl border border-white/10 bg-white/5 p-4 text-white transition hover:border-indigo-400/60 hover:bg-white/10">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="text-sm font-semibold">{label}</p>
-            <p className="text-xs text-white/70">{helper}</p>
-          </div>
-          <span className="rounded-full border border-indigo-300/40 bg-indigo-500/20 px-3 py-1 text-xs font-semibold text-indigo-50">
-            {busy ? 'Uploading…' : 'Upload'}
-          </span>
-        </div>
-        <input
-          type="file"
-          accept={accept}
-          className="hidden"
-          onChange={handleChange}
-          onClick={(e) => {
-            // Clear value so selecting the same file immediately triggers onChange.
-            ;(e.target as HTMLInputElement).value = ''
-          }}
-          disabled={busy}
-        />
-      </label>
-    )
-  }
+const UploadZone = ({
+  label,
+  accept,
+  onFile,
+  busy,
+  helper,
+  inputKey,
+  onReset,
+}: {
+  label: string
+  accept: string
+  onFile: (file: File) => void
+  busy: boolean
+  helper: string
+  inputKey: number
+  onReset: () => void
+}) => {
+  useEffect(() => {
+    console.info(`[UploadZone] mounted inputKey=${inputKey} label=${label}`)
+  }, [inputKey, label])
+  console.info(`[UploadZone] render inputKey=${inputKey} label=${label}`)
+  return (
+    <div className="block w-full rounded-2xl border border-white/10 bg-white/5 p-4 text-white transition hover:border-indigo-400/60 hover:bg-white/10">
+      <p className="text-sm font-semibold">{label}</p>
+      <p className="text-xs text-white/70 mb-2">{helper}</p>
+      <input
+        id={inputKey.toString()}
+        key={inputKey}
+        type="file"
+        accept={accept}
+        className="mt-2 block w-full cursor-pointer text-xs text-white/80 file:mr-3 file:cursor-pointer file:rounded-lg file:border file:border-white/20 file:bg-white/10 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-white file:hover:border-indigo-400/60 file:hover:bg-indigo-500/20"
+        onClick={(e) => {
+          const target = e.target as HTMLInputElement
+          target.value = ''
+        }}
+        onChange={(e) => {
+          const selected = e.target.files?.[0]
+          console.info(`[UploadZone] change inputKey=${inputKey} fileSelected=${!!selected}`)
+          if (selected) onFile(selected)
+          e.target.value = ''
+          onReset()
+        }}
+        disabled={busy}
+      />
+    </div>
+  )
+}
 
   const renderJobCard = (item: JobAnalysis, index: number) => {
     const gradient = badgeColors[index % badgeColors.length]
@@ -366,7 +364,7 @@ function App() {
         </div>
         <p
           className={`mt-3 text-sm text-white/70 leading-6 pr-1 whitespace-pre-line ${
-            materialsOpen[item.job.id] ? 'max-h-[28rem] overflow-y-auto' : 'max-h-48 overflow-hidden text-ellipsis'
+            descriptionOpen[item.job.id] ? 'max-h-[28rem] overflow-y-auto' : 'max-h-48 overflow-hidden text-ellipsis'
           }`}
         >
           {item.job.description
@@ -377,10 +375,10 @@ function App() {
           <button
             className="mt-2 text-xs font-semibold text-indigo-200 hover:text-indigo-100"
             onClick={() =>
-              setMaterialsOpen((state) => ({ ...state, [item.job.id]: !(materialsOpen[item.job.id] ?? false) }))
+              setDescriptionOpen((state) => ({ ...state, [item.job.id]: !(descriptionOpen[item.job.id] ?? false) }))
             }
           >
-            {materialsOpen[item.job.id] ? 'Less' : 'More'}
+            {descriptionOpen[item.job.id] ? 'Less' : 'More'}
           </button>
         )}
 
@@ -477,6 +475,12 @@ function App() {
             <UploadZone
               label="Resume (PDF or DOCX)"
               accept=".pdf,.doc,.docx,.txt"
+              inputKey={resumeInputKey}
+              onReset={() => {
+                const next = resumeInputKey + 2
+                console.info(`[UploadZone] resume reset to key=${next}`)
+                setResumeInputKey(next)
+              }}
               busy={loading.resume}
               helper={resumeText ? 'Resume ready' : 'Upload resume to extract skills'}
               onFile={handleResumeUpload}
@@ -484,6 +488,12 @@ function App() {
             <UploadZone
               label="CSV of LinkedIn URLs"
               accept=".csv,text/csv"
+              inputKey={csvInputKey}
+              onReset={() => {
+                const next = csvInputKey + 2
+                console.info(`[UploadZone] csv reset to key=${next}`)
+                setCsvInputKey(next)
+              }}
               busy={loading.csv}
               helper={urls.length ? `${urls.length} URLs loaded` : "CSV should include a 'url' column"}
               onFile={handleCsvUpload}
@@ -603,13 +613,13 @@ function App() {
                     LinkedIn ↗
                   </a>
                 </div>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {record.missing_skills.map((skill) => (
-                    <span key={skill} className="rounded-full bg-white/10 px-2 py-1 text-[11px] text-amber-100">
-                      Missing: {skill}
-                    </span>
-                  ))}
-                </div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {record.missing_skills.map((skill) => (
+                  <span key={skill} className="rounded-full bg-white/10 px-2 py-1 text-[11px] text-amber-100">
+                    Missing: {skill}
+                  </span>
+                ))}
+              </div>
                 {record.job.contact_person && (
                   <div className="mt-2 text-[11px] text-white/70">
                     Contact: {record.job.contact_person}
@@ -631,16 +641,21 @@ function App() {
                   Work: {displayOrUnavailable(record.job.work_type)}
                 </span>
               </div>
-                <div className="mt-3 grid gap-2 text-xs text-white/80">
-                  <div className="rounded-xl border border-white/5 bg-black/30 p-3">
-                    <p className="text-[10px] uppercase tracking-[0.2em] text-indigo-200/80">InMail</p>
-                    <p className="mt-1 whitespace-pre-line">{record.generated.inmail}</p>
-                  </div>
-                  <div className="rounded-xl border border-white/5 bg-black/30 p-3">
-                    <p className="text-[10px] uppercase tracking-[0.2em] text-indigo-200/80">Cover Letter</p>
-                    <p className="mt-1 whitespace-pre-line">{record.generated.cover_letter}</p>
-                  </div>
-                </div>
+                {record.has_generated && record.generated && (
+                  <details className="mt-3 rounded-xl border border-white/10 bg-black/30 p-3 text-xs text-white/80">
+                    <summary className="cursor-pointer text-indigo-200">InMail + Cover Letter</summary>
+                    <div className="mt-2 grid gap-2">
+                      <div className="rounded-xl border border-white/5 bg-black/30 p-3">
+                        <p className="text-[10px] uppercase tracking-[0.2em] text-indigo-200/80">InMail</p>
+                        <p className="mt-1 whitespace-pre-line">{record.generated.inmail}</p>
+                      </div>
+                      <div className="rounded-xl border border-white/5 bg-black/30 p-3">
+                        <p className="text-[10px] uppercase tracking-[0.2em] text-indigo-200/80">Cover Letter</p>
+                        <p className="mt-1 whitespace-pre-line">{record.generated.cover_letter}</p>
+                      </div>
+                    </div>
+                  </details>
+                )}
               </div>
             ))}
           </div>
