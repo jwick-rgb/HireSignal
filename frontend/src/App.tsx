@@ -458,7 +458,7 @@ const UploadZone = ({
                 }}
                 className="text-xs text-white/60 hover:text-white"
               >
-                X
+                Save and Close
               </button>
             </div>
             <div className="flex justify-end">
