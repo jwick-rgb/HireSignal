@@ -262,7 +262,7 @@ function App() {
         body: JSON.stringify(payload),
       })
       setSaved((state) => [...state, savedRecord])
-      updateMessage('Application saved')
+      updateMessage(`Saved ${analysis.job.title}`)
     } catch (err) {
       setError((err as Error).message)
     } finally {
