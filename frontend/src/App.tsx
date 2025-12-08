@@ -166,10 +166,16 @@ function App() {
     setProgress({ visible: true, total: totalJobs, current: 0 })
     setLoading((state) => ({ ...state, process: true }))
     setError(null)
+    const savedUrls = new Set(saved.map((s) => s.job.url))
     const results: JobAnalysis[] = []
     try {
       for (let idx = 0; idx < urls.length; idx++) {
         const url = urls[idx]
+        if (savedUrls.has(url)) {
+          const currentCompleted = idx + 1
+          setProgress({ visible: true, total: totalJobs, current: currentCompleted })
+          continue
+        }
         const formData = new FormData()
         formData.append('resume_text', resumeText)
         formData.append('url', url)
@@ -639,7 +645,9 @@ const UploadZone = ({
                 Upload files and click Process Jobs to see scored postings.
               </div>
             )}
-            {jobs.map((job, idx) => renderJobCard(job, idx))}
+            {[...jobs]
+              .sort((a, b) => b.fit_score - a.fit_score)
+              .map((job, idx) => renderJobCard(job, idx))}
           </div>
         </section>
 
