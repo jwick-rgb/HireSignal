@@ -90,6 +90,11 @@ function App() {
   const [materialsOpen, setMaterialsOpen] = useState<Record<string, boolean>>({})
   const [descriptionOpen, setDescriptionOpen] = useState<Record<string, boolean>>({})
   const [skillsExpanded, setSkillsExpanded] = useState(false)
+  const [progress, setProgress] = useState<{ visible: boolean; total: number; current: number }>({
+    visible: false,
+    total: 0,
+    current: 0,
+  })
   const [saved, setSaved] = useState<SavedRecord[]>([])
   const [loading, setLoading] = useState<LoadingState>(initialLoading)
   const [error, setError] = useState<string | null>(null)
@@ -157,23 +162,33 @@ function App() {
       setError('Upload a resume and CSV before processing')
       return
     }
+    const totalJobs = urls.length
+    setProgress({ visible: true, total: totalJobs, current: 0 })
     setLoading((state) => ({ ...state, process: true }))
     setError(null)
+    const results: JobAnalysis[] = []
     try {
-      const formData = new FormData()
-      formData.append('resume_text', resumeText)
-      formData.append('urls', urls.join(','))
-      formData.append('url_meta', JSON.stringify(urlMeta))
-      const data = await api<{ jobs: JobAnalysis[] }>('/jobs/process', {
-        method: 'POST',
-        body: formData,
-      })
-      setJobs(data.jobs)
+      for (let idx = 0; idx < urls.length; idx++) {
+        const url = urls[idx]
+        const formData = new FormData()
+        formData.append('resume_text', resumeText)
+        formData.append('url', url)
+        formData.append('meta', JSON.stringify(urlMeta[url] || {}))
+        const resp = await api<{ job: JobAnalysis }>('/jobs/process_one', {
+          method: 'POST',
+          body: formData,
+        })
+        results.push(resp.job)
+        const currentCompleted = idx + 1
+        setProgress({ visible: true, total: totalJobs, current: currentCompleted })
+      }
+      setJobs(results)
       setMaterials({})
       updateMessage('Jobs analyzed')
     } catch (err) {
       setError((err as Error).message)
     } finally {
+      setProgress({ visible: false, total: 0, current: 0 })
       setLoading((state) => ({ ...state, process: false }))
     }
   }
@@ -510,6 +525,7 @@ const UploadZone = ({
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-white">
+      <ProgressOverlay progress={progress} />
       <div className="mx-auto max-w-6xl px-4 py-10">
         <header className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-xl shadow-indigo-900/40 backdrop-blur">
           <div className="flex flex-wrap items-center justify-between gap-4">
@@ -739,6 +755,30 @@ const UploadZone = ({
 }
 
 export default App
+
+// Progress overlay component
+const ProgressOverlay = ({ progress }: { progress: { visible: boolean; total: number; current: number } }) => {
+  if (!progress.visible) return null
+  const percent = progress.total ? Math.min(100, Math.round((progress.current / progress.total) * 100)) : 0
+  const remaining = Math.max(progress.total - progress.current, 0)
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 pt-20">
+      <div className="w-full max-w-md rounded-2xl border border-white/10 bg-slate-900/90 p-4 shadow-xl">
+        <div className="flex items-center justify-between text-sm text-white/80">
+          <span>Processing jobs...</span>
+          <span>{percent}%</span>
+        </div>
+        <div className="mt-2 h-3 w-full overflow-hidden rounded-full bg-white/10">
+          <div
+            className="h-full bg-gradient-to-r from-indigo-500 to-cyan-400 transition-all duration-200"
+            style={{ width: `${Math.min(percent, 100)}%` }}
+          />
+        </div>
+        <p className="mt-2 text-xs text-white/70">Remaining: {remaining} of {progress.total}</p>
+      </div>
+    </div>
+  )
+}
     const handleCopy = async (text: string) => {
       try {
         await navigator.clipboard.writeText(text)

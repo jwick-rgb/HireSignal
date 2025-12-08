@@ -681,6 +681,27 @@ async def process_jobs(
     }
 
 
+@app.post("/jobs/process_one")
+async def process_job_single(
+    resume_text: str = Form(...),
+    url: str = Form(...),
+    meta: Optional[str] = Form(None),
+) -> dict:
+    meta_data = {}
+    if meta:
+        try:
+            meta_data = json.loads(meta)
+        except json.JSONDecodeError:
+            meta_data = {}
+    job = get_job(
+        url,
+        salary_override=meta_data.get("benefits"),
+        workplace_override=meta_data.get("workplace_type"),
+    )
+    analysis = compute_fit(job, resume_text)
+    return {"job": analysis.model_dump()}
+
+
 @app.post("/generate/inmail")
 async def generate_inmail_endpoint(
     job: JobPosting = Body(...),
