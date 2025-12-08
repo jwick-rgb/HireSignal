@@ -123,7 +123,13 @@ SKILL_KEYWORDS = [
     "databricks",
     "streamlit",
     "loveable",
-    "deep learning"
+    "deep learning",
+    "credit lending",
+    "marketing strategy",
+    "customer analytics",
+    "site reliability engineering",
+    "sagemaker",
+    "compliance"
 ]
 
 # Mock job records we can fall back to if fetching real content fails.
