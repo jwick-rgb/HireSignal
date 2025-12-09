@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import './index.css'
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000'
+const bookmarkletCode = `javascript:(function(){try{window._LINKEDIN_JOBS_=window._LINKEDIN_JOBS_||[];function clean(t){return t?t.replace(/[\\n\\r]+/g," ").trim():""}function findTxt(r,s){for(const sel of s){const el=r.querySelector(sel);if(el&&clean(el.innerText))return clean(el.innerText)}return""}const cards=document.querySelectorAll('li.scaffold-layout__list-item, li[data-occludable-job-id], li[id^="ember"]');let added=0;cards.forEach(card=>{const link=card.querySelector('a[href*="/jobs/view"]');if(!link)return;const url=link.href.split("?")[0];if(window._LINKEDIN_JOBS_.some(j=>j.url===url))return;const title=findTxt(card,['.job-card-list__title--link','.job-card-list__title','a.job-card-container__link']);const company=findTxt(card,['.artdeco-entity-lockup__subtitle span','.artdeco-entity-lockup__subtitle','.job-card-container__company-name']);const location=findTxt(card,['.artdeco-entity-lockup__caption li span','.artdeco-entity-lockup__caption span','.job-card-container__metadata-wrapper li span']);let workplace="";if(/\\((.*?)\\)/.test(location))workplace=location.match(/\\((.*?)\\)/)[1];const benefits=findTxt(card,['.artdeco-entity-lockup__metadata li span','.job-card-container__metadata-wrapper li span']);const insight=findTxt(card,['.job-card-container__job-insight-text']);let chips=[...card.querySelectorAll('.job-card-container__footer-item')].map(n=>clean(n.innerText)).filter(Boolean).join("; ");window._LINKEDIN_JOBS_.push({title,company,location,workplace,benefits,insight,chips,url});added++;});if(!confirm("Added "+added+" new jobs.\\nTotal collected: "+window._LINKEDIN_JOBS_.length+"\\n\\nClick OK to EXPORT combined CSV.\\nClick Cancel to continue collecting pages."))return;const header="Job Title,Company,Location,Workplace Type,Benefits,Job Insight,Footer Chips,URL\\n";const csv=header+window._LINKEDIN_JOBS_.map(r=>\`\"\${r.title}\",\"\${r.company}\",\"\${r.location}\",\"\${r.workplace}\",\"\${r.benefits}\",\"\${r.insight}\",\"\${r.chips}\",\"\${r.url}\"\`).join("\\n");const blob=new Blob([csv],{type:"text/csv"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="linkedin_jobs_combined.csv";document.body.appendChild(a);a.click();document.body.removeChild(a);alert("CSV exported with "+window._LINKEDIN_JOBS_.length+" total job cards.")}catch(e){alert("Extractor error: "+e)}})();`
 
 type JobPosting = {
   id: string
@@ -95,6 +96,7 @@ function App() {
     total: 0,
     current: 0,
   })
+  const [showBookmarklet, setShowBookmarklet] = useState(false)
   const [saved, setSaved] = useState<SavedRecord[]>([])
   const [loading, setLoading] = useState<LoadingState>(initialLoading)
   const [error, setError] = useState<string | null>(null)
@@ -626,10 +628,16 @@ const UploadZone = ({
           <div className="rounded-3xl border border-white/10 bg-white/5 p-4 text-sm text-white/80 shadow-lg shadow-indigo-900/40 backdrop-blur">
             <p className="text-xs uppercase tracking-[0.25em] text-white/60">How it works</p>
             <ol className="mt-3 space-y-2">
-              <li>1) Upload resume and CSV with a <code className="text-indigo-200">url</code> column.</li>
+              <li>1) Upload resume and CSV containing LinkedIn job URLs.</li>
               <li>2) Click Process Jobs to score fit and see missing skills.</li>
               <li>3) Generate InMail + Cover Letter per role.</li>
-              <li>4) Save curated roles and export to CSV.</li>
+              <li>4) Save and export curated roles.</li>
+              <li>
+                5) Use our <button className="text-indigo-200 underline" onClick={() => {
+                  const element = document.getElementById('bookmarklet-section')
+                  if (element) element.scrollIntoView({ behavior: 'smooth' })
+                }}>bookmarklet</button> below to create the LinkedIn CSV for upload.
+              </li>
             </ol>
           </div>
         </section>
@@ -650,6 +658,106 @@ const UploadZone = ({
               .map((job, idx) => renderJobCard(job, idx))}
           </div>
         </section>
+
+        <section id="bookmarklet-section" className="mt-10 rounded-3xl border border-white/10 bg-white/5 p-6 text-sm text-white/80 shadow-lg shadow-indigo-900/40 backdrop-blur">
+          <h2 className="text-lg font-semibold text-white">LinkedIn Job Extractor Bookmarklet</h2>
+          <p className="mt-2 text-xs text-white/70">
+            Use this bookmarklet to create the LinkedIn CSV for upload.
+          </p>
+          <div className="mt-3 space-y-2">
+            <p className="font-semibold text-white/90">How to Install</p>
+            <ol className="list-decimal space-y-1 pl-4">
+              <li>Show your bookmarks bar (Ctrl+Shift+B on Windows, Cmd+Shift+B on Mac).</li>
+              <li>Add a new bookmark named <span className="font-semibold text-white">LinkedIn Job Extractor</span>.</li>
+              <li>
+                In the URL field, paste the bookmarklet code (starts with{' '}
+                <code>{'javascript:(function(){...})'}</code>).
+              </li>
+              <li>Save the bookmark.</li>
+            </ol>
+          </div>
+          <div className="mt-4 space-y-2">
+            <p className="font-semibold text-white/90">How to Use It</p>
+            <ol className="list-decimal space-y-1 pl-4">
+              <li>
+                Go to a classic LinkedIn job results page (
+                <a
+                  href="https://www.linkedin.com/jobs/search/?keywords=&location=United%20States&refresh=true"
+                  target="_blank"
+                  className="text-indigo-200 underline"
+                >
+                  use this link
+                </a>
+                ).
+              </li>
+              <li>Scroll until all the jobs on the page are visible.</li>
+              <li>Click <span className="font-semibold text-white">LinkedIn Job Extractor</span> from your bookmarks bar.</li>
+              <li>The tool collects postings and tells you how many were added.</li>
+              <li>Click:
+                <ul className="list-disc pl-6">
+                  <li><span className="font-semibold text-white">Cancel</span> to keep collecting from more pages.</li>
+                  <li><span className="font-semibold text-white">OK</span> to download the combined CSV.</li>
+                </ul>
+              </li>
+            </ol>
+          </div>
+          <div className="mt-4 space-y-1">
+            <p className="font-semibold text-white/90">What the CSV Includes</p>
+            <ul className="list-disc pl-6">
+              <li>Job Title</li>
+              <li>Company</li>
+              <li>Location</li>
+              <li>Workplace Type</li>
+              <li>Benefits (salary)</li>
+              <li>URL</li>
+            </ul>
+          </div>
+          <p className="mt-3 text-xs text-white/60">
+            Works on LinkedIn’s classic job list view. Collect across multiple pages; export when ready.
+          </p>
+          <div className="mt-4">
+            <button
+              className="rounded-lg border border-indigo-300/40 bg-indigo-500/20 px-3 py-2 text-xs font-semibold text-indigo-50 hover:bg-indigo-500/30"
+              onClick={() => setShowBookmarklet(true)}
+            >
+              Copy bookmarklet code
+            </button>
+          </div>
+        </section>
+
+        {showBookmarklet && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+            <div className="w-full max-w-3xl rounded-2xl border border-white/10 bg-slate-900 p-4 text-sm text-white shadow-xl">
+              <div className="flex items-center justify-between">
+                <h3 className="text-base font-semibold">LinkedIn Job Extractor Code</h3>
+                <button
+                  className="text-xs text-white/60 hover:text-white"
+                  onClick={() => setShowBookmarklet(false)}
+                >
+                  X
+                </button>
+              </div>
+              <div className="mt-3 h-64 overflow-auto rounded-xl border border-white/10 bg-black/40 p-3 font-mono text-xs text-white">
+                {bookmarkletCode}
+              </div>
+              <div className="mt-3 flex justify-end">
+                <button
+                  className="rounded-lg border border-indigo-300/40 bg-indigo-500/20 px-3 py-2 text-xs font-semibold text-indigo-50 hover:bg-indigo-500/30"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(bookmarkletCode)
+                      updateMessage('Bookmarklet code copied')
+                    } catch (err) {
+                      setError('Copy failed')
+                    }
+                  }}
+                >
+                  Copy Code
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <section className="mt-10">
           <div className="flex items-center justify-between gap-3">
