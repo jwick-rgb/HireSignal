@@ -663,7 +663,10 @@ const UploadZone = ({
         <section id="bookmarklet-section" className="mt-10 rounded-3xl border border-white/10 bg-white/5 p-6 text-sm text-white/80 shadow-lg shadow-indigo-900/40 backdrop-blur">
           <h2 className="text-lg font-semibold text-white">LinkedIn Job Extractor Bookmarklet</h2>
           <p className="mt-2 text-xs text-white/70">
-            Use this bookmarklet to create the LinkedIn CSV for upload.
+            Use this bookmarklet to automatically generate a CSV file containing job postings listed on LinkedIn’s classic job list view. Collect across multiple pages and export when ready.
+          </p>
+          <p className="mt-2 text-xs text-white/70">
+            NOTE: This is intended to work within LinkedIn's Terms of Service.
           </p>
           <div className="mt-3 space-y-2">
             <p className="font-semibold text-white/90">How to Install</p>
@@ -671,8 +674,7 @@ const UploadZone = ({
               <li>Show your bookmarks bar (Ctrl+Shift+B on Windows, Cmd+Shift+B on Mac).</li>
               <li>Add a new bookmark named <span className="font-semibold text-white">LinkedIn Job Extractor</span>.</li>
               <li>
-                In the URL field, paste the bookmarklet code (starts with{' '}
-                <code>{'javascript:(function(){...})'}</code>).
+                In the URL field, paste the bookmarklet code (see 'Copy bookmarklet code' below).
               </li>
               <li>Save the bookmark.</li>
             </ol>
@@ -691,13 +693,14 @@ const UploadZone = ({
                 </a>
                 ).
               </li>
-              <li>Scroll until all the jobs on the page are visible.</li>
+              <li>Enter your job search filters as you normally would.</li>
+              <li>Scroll down until all of the job results on the page are visible.</li>
               <li>Click <span className="font-semibold text-white">LinkedIn Job Extractor</span> from your bookmarks bar.</li>
               <li>The tool collects postings and tells you how many were added.</li>
               <li>Click:
                 <ul className="list-disc pl-6">
-                  <li><span className="font-semibold text-white">Cancel</span> to keep collecting from more pages.</li>
-                  <li><span className="font-semibold text-white">OK</span> to download the combined CSV.</li>
+                  <li><span className="font-semibold text-white">Cancel</span> to keep collecting from more pages by hitting 'Next' at bottom of the page and repeating steps 3 & 4 above.</li>
+                  <li><span className="font-semibold text-white">OK</span> to download what's been collected into a CSV file.</li>
                 </ul>
               </li>
             </ol>
@@ -713,9 +716,6 @@ const UploadZone = ({
               <li>URL</li>
             </ul>
           </div>
-          <p className="mt-3 text-xs text-white/60">
-            Works on LinkedIn’s classic job list view. Collect across multiple pages; export when ready.
-          </p>
           <div className="mt-4">
             <button
               className="rounded-lg border border-indigo-300/40 bg-indigo-500/20 px-3 py-2 text-xs font-semibold text-indigo-50 hover:bg-indigo-500/30"
