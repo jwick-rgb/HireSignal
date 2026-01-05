@@ -17,6 +17,7 @@ type JobPosting = {
   work_type?: string | null
   contact_person?: string | null
   posted_at?: string | null
+  applicants?: string | null
 }
 
 type CsvMeta = {
@@ -383,6 +384,11 @@ const UploadZone = ({
               {item.job.posted_at && (
                 <span className="rounded-full bg-white/5 px-2 py-1">
                   Posted: {item.job.posted_at}
+                </span>
+              )}
+              {item.job.applicants && (
+                <span className="rounded-full bg-white/5 px-2 py-1">
+                  Applicants: {item.job.applicants}
                 </span>
               )}
               <span className="rounded-full bg-white/5 px-2 py-1">

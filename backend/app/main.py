@@ -172,6 +172,7 @@ class JobPosting(BaseModel):
     work_type: Optional[str] = None
     contact_person: Optional[str] = None
     posted_at: Optional[str] = None
+    applicants: Optional[str] = None
 
 
 class JobAnalysis(BaseModel):
@@ -499,6 +500,15 @@ def fetch_job_from_linkedin(
         html,
     )
 
+    applicants = extract_first(
+        [
+            r'<span[^>]*class="[^"]*num-applicants__caption[^"]*"[^>]*>([^<]+)</span>',
+            r'<div[^>]*class="[^"]*num-applicants__caption[^"]*"[^>]*>([^<]+)</div>',
+            r'<figcaption[^>]*class="[^"]*num-applicants__caption[^"]*"[^>]*>([^<]+)</figcaption>',
+        ],
+        html,
+    )
+
     location = extract_first(
         [
             r'"formattedLocation"\s*:\s*"([^"]+)"',
@@ -558,6 +568,7 @@ def fetch_job_from_linkedin(
         work_type=normalized_work_type,
         contact_person=contact_person,
         posted_at=posted_at,
+        applicants=applicants,
     )
 
 
