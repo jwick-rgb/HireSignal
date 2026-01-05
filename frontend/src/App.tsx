@@ -304,6 +304,15 @@ function App() {
     }
   }
 
+  const handleCopy = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      updateMessage('Copied to clipboard')
+    } catch (err) {
+      setError('Copy failed')
+    }
+  }
+
 const UploadZone = ({
   label,
   accept,
@@ -905,11 +914,3 @@ const ProgressOverlay = ({ progress }: { progress: { visible: boolean; total: nu
     </div>
   )
 }
-    const handleCopy = async (text: string) => {
-      try {
-        await navigator.clipboard.writeText(text)
-        updateMessage('Copied to clipboard')
-      } catch (err) {
-        setError('Copy failed')
-      }
-    }
