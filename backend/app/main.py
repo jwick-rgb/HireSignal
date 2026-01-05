@@ -1,6 +1,7 @@
 import csv
 import io
 import json
+import os
 import re
 import uuid
 from datetime import datetime
@@ -21,6 +22,10 @@ DB_PATH = BASE_DIR / "db.json"
 INMAIL_TEMPLATE = ROOT_DIR / "templates" / "emails" / "inmail.md"
 COVER_TEMPLATE = ROOT_DIR / "templates" / "cover_letters" / "cover_letter.md"
 FETCHED_DIR = BASE_DIR / "fetched_pages"
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.2")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_TIMEOUT = float(os.getenv("OPENAI_TIMEOUT", "15"))
+MAX_INPUT_CHARS = int(os.getenv("OPENAI_MAX_INPUT", "12000"))
 
 
 # Simple keyword list for the MVP; extend in later iterations.
@@ -323,6 +328,38 @@ def load_template(path: Path) -> str:
         return ""
 
 
+def call_openai(prompt: str, max_tokens: int = 900) -> str:
+    if not OPENAI_API_KEY:
+        raise HTTPException(status_code=500, detail="OPENAI_API_KEY not configured")
+    prompt = prompt[:MAX_INPUT_CHARS]
+    headers = {
+        "Authorization": f"Bearer {OPENAI_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": OPENAI_MODEL,
+        "messages": [
+            {"role": "system", "content": "You are a career advisor and professional resume writer."},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.4,
+        "max_tokens": max_tokens,
+    }
+    try:
+        with httpx.Client(timeout=OPENAI_TIMEOUT) as client:
+            resp = client.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
+            if resp.status_code >= 400:
+                logger.warning("OpenAI error %s: %s", resp.status_code, resp.text)
+                raise HTTPException(status_code=502, detail="AI generation failed")
+            data = resp.json()
+            return data["choices"][0]["message"]["content"].strip()
+    except HTTPException:
+        raise
+    except Exception as exc:  # pragma: no cover
+        logger.warning("OpenAI request failed: %s", exc)
+        raise HTTPException(status_code=502, detail="AI generation failed")
+
+
 def format_salary_to_k(value: str) -> str:
     """
     Attempt to normalize salary strings like "$265,000.00/yr" or "$265,000 - $275,000/yr" to "$265K/yr".
@@ -565,9 +602,11 @@ def compute_fit(job: JobPosting, resume_text: str) -> JobAnalysis:
 
 
 def generate_inmail(job: JobPosting, resume_text: str, matched_skills: List[str]) -> str:
+    resume_text = (resume_text or "")[:MAX_INPUT_CHARS]
     salutation = get_salutation(job)
     clean_title = clean_job_title(job.title)
     template = load_template(INMAIL_TEMPLATE)
+    filled_template = ""
     if not template:
         highlights = ", ".join(matched_skills[:3]) if matched_skills else "relevant experience"
         logger.info("InMail template missing; using fallback copy")
@@ -576,19 +615,41 @@ def generate_inmail(job: JobPosting, resume_text: str, matched_skills: List[str]
             f"I'm excited about the {clean_title} role at {job.company}. I bring {highlights} and have shipped products "
             f"that align with your needs. Job link: {job.url}"
         )
-    populated = (
+    filled_template = (
         template.replace("<job title>", clean_title)
         .replace("<contact>", salutation)
         .replace("<company>", job.company)
         .replace("<job url>", job.url)
     )
-    return populated
+
+    if OPENAI_API_KEY:
+        try:
+            prompt = (
+                "Act as a career advisor and professional resume writer with decades of experience. "
+                "Write a concise, warm InMail using the structure and closing language in the provided template. "
+                "Preserve the closing wording exactly as in the template. Use the resume to highlight the top 3-4 "
+                "strengths that map to the role. Keep bullets crisp. Include the job URL once. "
+                "Return only the final InMail text.\n\n"
+                f"Template (filled with placeholders):\n{filled_template}\n\n"
+                f"Job description:\n{job.description}\n\n"
+                f"Matched skills: {', '.join(matched_skills) if matched_skills else 'None'}\n\n"
+                f"Resume:\n{resume_text}\n"
+            )
+            text = call_openai(prompt, max_tokens=800)
+            if text:
+                return text
+        except Exception as exc:  # pragma: no cover
+            logger.warning("OpenAI InMail generation failed, using template: %s", exc)
+
+    return filled_template
 
 
 def generate_cover_letter(job: JobPosting, resume_text: str, matched_skills: List[str]) -> str:
+    resume_text = (resume_text or "")[:MAX_INPUT_CHARS]
     clean_title = clean_job_title(job.title)
     template = load_template(COVER_TEMPLATE)
     today = datetime.now().strftime("%B %d, %Y")
+    filled_template = ""
     if not template:
         skills_text = ", ".join(matched_skills[:5]) if matched_skills else "relevant technical experience"
         logger.info("Cover letter template missing; using fallback copy")
@@ -596,12 +657,33 @@ def generate_cover_letter(job: JobPosting, resume_text: str, matched_skills: Lis
             f"I am applying for the {clean_title} position at {job.company}. My background includes {skills_text}.\n\n"
             f"Thank you for your consideration.\n"
         )
-    populated = (
+    filled_template = (
         template.replace("<current date>", today)
         .replace("<company>", job.company)
         .replace("<job title>", clean_title)
     )
-    return populated
+
+    if OPENAI_API_KEY:
+        try:
+            prompt = (
+                "Act as a career advisor and professional resume writer with decades of experience. "
+                "Create a polished cover letter that follows the provided template structure: "
+                "salutation, warm intro, a bulleted section of what the applicant brings, and the exact same closing "
+                "wording as the template. Update placeholders for current date, company, and job title. "
+                "Use the resume and job description to select the 3-5 strongest, most relevant bullets. "
+                "Keep the tone warm but professional. Return only the final cover letter text.\n\n"
+                f"Template (filled with placeholders):\n{filled_template}\n\n"
+                f"Job description:\n{job.description}\n\n"
+                f"Matched skills: {', '.join(matched_skills) if matched_skills else 'None'}\n\n"
+                f"Resume:\n{resume_text}\n"
+            )
+            text = call_openai(prompt, max_tokens=900)
+            if text:
+                return text
+        except Exception as exc:  # pragma: no cover
+            logger.warning("OpenAI cover letter generation failed, using template: %s", exc)
+
+    return filled_template
 
 
 @app.on_event("startup")
@@ -700,6 +782,24 @@ async def process_job_single(
     )
     analysis = compute_fit(job, resume_text)
     return {"job": analysis.model_dump()}
+
+
+@app.post("/api/ai")
+async def generate_ai_text(
+    kind: str = Body(..., embed=True),
+    job: JobPosting = Body(...),
+    resume_text: str = Body(""),
+    matched_skills: Optional[List[str]] = Body(None),
+) -> dict:
+    """
+    Unified AI generation endpoint. Accepts kind=inmail|cover to generate text server-side.
+    """
+    if kind not in {"inmail", "cover"}:
+        raise HTTPException(status_code=400, detail="Invalid kind; expected 'inmail' or 'cover'")
+    matched = matched_skills or []
+    if kind == "inmail":
+        return {"text": generate_inmail(job, resume_text, matched)}
+    return {"text": generate_cover_letter(job, resume_text, matched)}
 
 
 @app.post("/generate/inmail")

@@ -9,3 +9,6 @@ backend/fetched_pages/
 Thumbs.db
 resume/Cesar_Romero_MBA_Resume.docx
 backend/resume_extracted.txt
+
+.env
+
