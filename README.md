@@ -31,7 +31,6 @@ npm run dev
 Open the Vite dev URL, upload a resume (PDF/DOCX/TXT) and a CSV with a `url` column, click **Process Jobs**, generate materials per job, save favorites, and export CSV from the Saved section.
 
 ## Notes
-- Job details are generated from mock templates for now to avoid LinkedIn scraping limits.
 - Saved applications are stored in `backend/db.json`; keep it alongside the API.
 - AI generation uses OpenAI (chatgpt 5.2). Set an `OPENAI_API_KEY` environment variable (server-side only). Examples:
   - macOS/Linux: `export OPENAI_API_KEY=sk-...`

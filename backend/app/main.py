@@ -344,7 +344,7 @@ def call_openai(prompt: str, max_tokens: int = 900) -> str:
             {"role": "user", "content": prompt},
         ],
         "temperature": 0.4,
-        "max_tokens": max_tokens,
+        "max_completion_tokens": max_tokens,
     }
     try:
         with httpx.Client(timeout=OPENAI_TIMEOUT) as client:
