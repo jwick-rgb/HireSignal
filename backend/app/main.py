@@ -134,6 +134,7 @@ SKILL_KEYWORDS = [
     "customer analytics",
     "site reliability engineering",
     "sagemaker",
+    "RAG"
     "compliance"
 ]
 
