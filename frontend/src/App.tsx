@@ -51,6 +51,7 @@ type LoadingState = {
   resume: boolean
   csv: boolean
   process: boolean
+  single: boolean
   generateId: string | null
   saveId: string | null
   exportCsv: boolean
@@ -60,6 +61,7 @@ const initialLoading: LoadingState = {
   resume: false,
   csv: false,
   process: false,
+  single: false,
   generateId: null,
   saveId: null,
   exportCsv: false,
@@ -86,6 +88,8 @@ function App() {
   const [urlMeta, setUrlMeta] = useState<Record<string, CsvMeta>>({})
   const [resumeInputKey, setResumeInputKey] = useState(() => Date.now())
   const [csvInputKey, setCsvInputKey] = useState(() => Date.now() + 1)
+  const [singleUrl, setSingleUrl] = useState('')
+  const [showCsvUpload, setShowCsvUpload] = useState(true)
   const [jobs, setJobs] = useState<JobAnalysis[]>([])
   const [materials, setMaterials] = useState<Record<string, GeneratedMaterials>>({})
   const [materialsDraft, setMaterialsDraft] = useState<Record<string, GeneratedMaterials>>({})
@@ -162,44 +166,77 @@ function App() {
   }
 
   const processJobs = async () => {
-    if (!resumeText || !urls.length) {
-      setError('Upload a resume and CSV before processing')
+    if (!resumeText) {
+      setError('Upload a resume before processing')
       return
     }
-    const totalJobs = urls.length
-    setProgress({ visible: true, total: totalJobs, current: 0 })
-    setLoading((state) => ({ ...state, process: true }))
-    setError(null)
-    const savedUrls = new Set(saved.map((s) => s.job.url))
-    const results: JobAnalysis[] = []
-    try {
-      for (let idx = 0; idx < urls.length; idx++) {
-        const url = urls[idx]
-        if (savedUrls.has(url)) {
+
+    if (showCsvUpload) {
+      if (!urls.length) {
+        setError('Upload a CSV before processing')
+        return
+      }
+      const totalJobs = urls.length
+      setProgress({ visible: true, total: totalJobs, current: 0 })
+      setLoading((state) => ({ ...state, process: true }))
+      setError(null)
+      const savedUrls = new Set(saved.map((s) => s.job.url))
+      const results: JobAnalysis[] = []
+      try {
+        for (let idx = 0; idx < urls.length; idx++) {
+          const url = urls[idx]
+          if (savedUrls.has(url)) {
+            const currentCompleted = idx + 1
+            setProgress({ visible: true, total: totalJobs, current: currentCompleted })
+            continue
+          }
+          const formData = new FormData()
+          formData.append('resume_text', resumeText)
+          formData.append('url', url)
+          formData.append('meta', JSON.stringify(urlMeta[url] || {}))
+          const resp = await api<{ job: JobAnalysis }>('/jobs/process_one', {
+            method: 'POST',
+            body: formData,
+          })
+          results.push(resp.job)
           const currentCompleted = idx + 1
           setProgress({ visible: true, total: totalJobs, current: currentCompleted })
-          continue
         }
-        const formData = new FormData()
-        formData.append('resume_text', resumeText)
-        formData.append('url', url)
-        formData.append('meta', JSON.stringify(urlMeta[url] || {}))
-        const resp = await api<{ job: JobAnalysis }>('/jobs/process_one', {
-          method: 'POST',
-          body: formData,
-        })
-        results.push(resp.job)
-        const currentCompleted = idx + 1
-        setProgress({ visible: true, total: totalJobs, current: currentCompleted })
+        setJobs(results)
+        setMaterials({})
+        updateMessage('Jobs analyzed')
+      } catch (err) {
+        setError((err as Error).message)
+      } finally {
+        setProgress({ visible: false, total: 0, current: 0 })
+        setLoading((state) => ({ ...state, process: false }))
       }
-      setJobs(results)
+      return
+    }
+
+    const trimmed = singleUrl.trim()
+    if (!trimmed) {
+      setError('Enter a LinkedIn URL before processing')
+      return
+    }
+    setLoading((state) => ({ ...state, single: true }))
+    setError(null)
+    try {
+      const formData = new FormData()
+      formData.append('resume_text', resumeText)
+      formData.append('url', trimmed)
+      const resp = await api<{ job: JobAnalysis }>('/jobs/process_one', {
+        method: 'POST',
+        body: formData,
+      })
+      setJobs((state) => [resp.job, ...state])
       setMaterials({})
-      updateMessage('Jobs analyzed')
+      updateMessage('Job analyzed')
+      setSingleUrl('')
     } catch (err) {
       setError((err as Error).message)
     } finally {
-      setProgress({ visible: false, total: 0, current: 0 })
-      setLoading((state) => ({ ...state, process: false }))
+      setLoading((state) => ({ ...state, single: false }))
     }
   }
 
@@ -582,26 +619,65 @@ const UploadZone = ({
               helper={resumeText ? 'Resume ready' : 'Upload resume to extract skills'}
               onFile={handleResumeUpload}
             />
-            <UploadZone
-              label="CSV of LinkedIn URLs"
-              accept=".csv,text/csv"
-              inputKey={csvInputKey}
-              onReset={() => {
-                const next = csvInputKey + 2
-                console.info(`[UploadZone] csv reset to key=${next}`)
-                setCsvInputKey(next)
-              }}
-              busy={loading.csv}
-              helper={urls.length ? `${urls.length} URLs loaded` : "CSV should include a 'url' column"}
-              onFile={handleCsvUpload}
-            />
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => setShowCsvUpload(true)}
+                className={`rounded-xl px-3 py-2 text-xs font-semibold transition ${
+                  showCsvUpload
+                    ? 'bg-indigo-500/80 text-white shadow-md shadow-indigo-900/60'
+                    : 'border border-white/15 text-white/80 hover:border-indigo-400/60 hover:text-white'
+                }`}
+              >
+                CSV Upload
+              </button>
+              <button
+                onClick={() => setShowCsvUpload(false)}
+                className={`rounded-xl px-3 py-2 text-xs font-semibold transition ${
+                  !showCsvUpload
+                    ? 'bg-indigo-500/80 text-white shadow-md shadow-indigo-900/60'
+                    : 'border border-white/15 text-white/80 hover:border-indigo-400/60 hover:text-white'
+                }`}
+              >
+                Single URL
+              </button>
+            </div>
+            {showCsvUpload ? (
+              <UploadZone
+                label="CSV of LinkedIn URLs"
+                accept=".csv,text/csv"
+                inputKey={csvInputKey}
+                onReset={() => {
+                  const next = csvInputKey + 2
+                  console.info(`[UploadZone] csv reset to key=${next}`)
+                  setCsvInputKey(next)
+                }}
+                busy={loading.csv}
+                helper={urls.length ? `${urls.length} URLs loaded` : "CSV should include a 'url' column"}
+                onFile={handleCsvUpload}
+              />
+            ) : (
+              <div className="block w-full rounded-2xl border border-white/10 bg-white/5 p-4 text-white transition hover:border-indigo-400/60 hover:bg-white/10">
+                <p className="text-sm font-semibold">Single LinkedIn URL</p>
+                <p className="text-xs text-white/70 mb-2">Paste a single job URL to process without CSV upload.</p>
+                <div className="flex flex-wrap gap-2">
+                  <input
+                    value={singleUrl}
+                    onChange={(e) => setSingleUrl(e.target.value)}
+                    placeholder="https://www.linkedin.com/jobs/view/..."
+                    className="flex-1 min-w-[220px] rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-xs text-white/80 focus:outline-none focus:ring-2 focus:ring-indigo-400/60"
+                  />
+                  <span className="text-xs text-white/60 self-center">Use Process Jobs below</span>
+                </div>
+              </div>
+            )}
+
             <div className="flex flex-wrap items-center gap-3">
               <button
                 onClick={processJobs}
-                disabled={loading.process}
+                disabled={loading.process || loading.single}
                 className="rounded-2xl bg-indigo-500 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-900/50 transition hover:bg-indigo-500/90 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {loading.process ? 'Analyzing…' : 'Process Jobs'}
+                {loading.process || loading.single ? 'Analyzing…' : 'Process Jobs'}
               </button>
               {resumeSkills.length > 0 && (
                 <div className="flex flex-wrap gap-2 text-xs text-white/70">
@@ -644,12 +720,13 @@ const UploadZone = ({
           <div className="rounded-3xl border border-white/10 bg-white/5 p-4 text-sm text-white/80 shadow-lg shadow-indigo-900/40 backdrop-blur">
             <p className="text-xs uppercase tracking-[0.25em] text-white/60">How it works</p>
             <ol className="mt-3 space-y-2">
-              <li>1) Upload resume and CSV containing LinkedIn job URLs.</li>
-              <li>2) Click Process Jobs to score fit and see missing skills.</li>
-              <li>3) Generate InMail + Cover Letter per role.</li>
-              <li>4) Save and export curated roles.</li>
+              <li>1) Upload your resume. </li>
+              <li>2) Upload a CSV containing LinkedIn job URLs OR paste in a single URL.</li>
+              <li>3) Click Process Jobs to score fit and see missing skills.</li>
+              <li>4) Generate InMail + Cover Letter per role.</li>
+              <li>5) Save and export curated roles.</li>
               <li>
-                5) Use our <button className="text-indigo-200 underline" onClick={() => {
+                6) Use our <button className="text-indigo-200 underline" onClick={() => {
                   const element = document.getElementById('bookmarklet-section')
                   if (element) element.scrollIntoView({ behavior: 'smooth' })
                 }}>bookmarklet</button> below to create the LinkedIn CSV for upload.
