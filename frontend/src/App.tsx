@@ -86,6 +86,8 @@ function App() {
   const [resumeSkills, setResumeSkills] = useState<string[]>([])
   const [urls, setUrls] = useState<string[]>([])
   const [urlMeta, setUrlMeta] = useState<Record<string, CsvMeta>>({})
+  const [resumeFilename, setResumeFilename] = useState('No file chosen')
+  const [csvFilename, setCsvFilename] = useState('No file chosen')
   const [resumeInputKey, setResumeInputKey] = useState(() => Date.now())
   const [csvInputKey, setCsvInputKey] = useState(() => Date.now() + 1)
   const [singleUrl, setSingleUrl] = useState('')
@@ -96,6 +98,8 @@ function App() {
   const [materialsOpen, setMaterialsOpen] = useState<Record<string, boolean>>({})
   const [descriptionOpen, setDescriptionOpen] = useState<Record<string, boolean>>({})
   const [skillsExpanded, setSkillsExpanded] = useState(false)
+  const [customGeneratorOpen, setCustomGeneratorOpen] = useState(false)
+  const [instructionsOpen, setInstructionsOpen] = useState(false)
   const [progress, setProgress] = useState<{ visible: boolean; total: number; current: number }>({
     visible: false,
     total: 0,
@@ -107,6 +111,15 @@ function App() {
   const [loading, setLoading] = useState<LoadingState>(initialLoading)
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
+  const [customTitle, setCustomTitle] = useState('')
+  const [customCompany, setCustomCompany] = useState('')
+  const [customContact, setCustomContact] = useState('')
+  const [customUrl, setCustomUrl] = useState('')
+  const [customDescription, setCustomDescription] = useState('')
+  const [customOutput, setCustomOutput] = useState<GeneratedMaterials | null>(null)
+  const [customLoading, setCustomLoading] = useState(false)
+  const [customGenerated, setCustomGenerated] = useState(false)
+  const [customToast, setCustomToast] = useState<string | null>(null)
 
   useEffect(() => {
     refreshSaved()
@@ -137,6 +150,7 @@ function App() {
       })
       setResumeText(data.text)
       setResumeSkills(data.skills || [])
+      setResumeFilename(file.name || 'No file chosen')
       updateMessage('Resume processed')
     } catch (err) {
       setError((err as Error).message)
@@ -157,6 +171,7 @@ function App() {
       })
       setUrls(data.urls)
       setUrlMeta(data.meta || {})
+      setCsvFilename(file.name || 'No file chosen')
       updateMessage(`Loaded ${data.urls.length} job URLs`)
     } catch (err) {
       setError((err as Error).message)
@@ -342,12 +357,85 @@ function App() {
     }
   }
 
-  const handleCopy = async (text: string) => {
+  const downloadSampleCsv = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/sample/csv`)
+      if (!res.ok) throw new Error('Sample CSV download failed')
+      const blob = await res.blob()
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = 'linkedin_jobs.csv'
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+    } catch (err) {
+      setError((err as Error).message)
+    }
+  }
+
+  const handleCopy = async (text: string, label?: string) => {
     try {
       await navigator.clipboard.writeText(text)
-      updateMessage('Copied to clipboard')
+      updateMessage(label ? `Copied ${label}` : 'Copied to clipboard')
     } catch (err) {
       setError('Copy failed')
+    }
+  }
+
+  const handleCustomCopy = async (text: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCustomToast(`Copied ${label}`)
+      updateMessage(`Copied ${label}`)
+      setTimeout(() => setCustomToast(null), 2500)
+    } catch (err) {
+      setError('Copy failed')
+    }
+  }
+
+  const generateCustomMaterials = async () => {
+    if (!resumeText || !customDescription.trim()) {
+      setError('Upload a resume and paste a job description before generating')
+      return
+    }
+    setCustomLoading(true)
+    setError(null)
+    try {
+      const jobPayload: JobPosting = {
+        id: crypto.randomUUID(),
+        url: customUrl.trim() || 'https://www.linkedin.com/jobs/view/unknown',
+        title: customTitle.trim() || 'Untitled role',
+        company: customCompany.trim() || 'Unknown company',
+        description: customDescription.trim(),
+        required_skills: [],
+        contact_person: customContact.trim() || null,
+      }
+      const body = JSON.stringify({
+        job: jobPayload,
+        resume_text: resumeText,
+        matched_skills: resumeSkills,
+      })
+      const [inmailResp, coverResp] = await Promise.all([
+        api<{ inmail: string }>('/generate/inmail', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body,
+        }),
+        api<{ cover_letter: string }>('/generate/coverletter', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body,
+        }),
+      ])
+      setCustomOutput({ inmail: inmailResp.inmail, cover_letter: coverResp.cover_letter })
+      setCustomGenerated(true)
+      updateMessage('Custom materials generated')
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setCustomLoading(false)
     }
   }
 
@@ -359,14 +447,16 @@ const UploadZone = ({
   helper,
   inputKey,
   onReset,
+  filename,
 }: {
   label: string
   accept: string
   onFile: (file: File) => void
   busy: boolean
-  helper: string
+  helper: React.ReactNode
   inputKey: number
   onReset: () => void
+  filename?: string
 }) => {
   useEffect(() => {
     console.info(`[UploadZone] mounted inputKey=${inputKey} label=${label}`)
@@ -604,22 +694,77 @@ const UploadZone = ({
           </div>
         </header>
 
-        <section className="mt-6 grid gap-4 lg:grid-cols-3">
-          <div className="lg:col-span-2 space-y-3">
-            <UploadZone
-              label="Resume (PDF or DOCX)"
-              accept=".pdf,.doc,.docx,.txt"
-              inputKey={resumeInputKey}
-              onReset={() => {
-                const next = resumeInputKey + 2
-                console.info(`[UploadZone] resume reset to key=${next}`)
-                setResumeInputKey(next)
-              }}
-              busy={loading.resume}
-              helper={resumeText ? 'Resume ready' : 'Upload resume to extract skills'}
-              onFile={handleResumeUpload}
-            />
-            <div className="flex flex-wrap items-center gap-2">
+        <div className="mt-4 flex items-center gap-2">
+          <button
+            className="flex items-center gap-2 rounded-xl border border-white/15 px-3 py-2 text-xs font-semibold text-white/80 hover:border-indigo-400/60 hover:text-white"
+            onClick={() => setInstructionsOpen((prev) => !prev)}
+          >
+            <span className="flex h-5 w-5 items-center justify-center rounded-full border border-white/30 text-[10px] text-white/80">i</span>
+            How it Works
+          </button>
+        </div>
+
+        {instructionsOpen && (
+          <div className="rounded-3xl border border-white/10 bg-white/5 px-5 pb-3 pt-4 text-sm text-white/80 shadow-lg shadow-indigo-900/40 backdrop-blur">
+            <div className="flex items-center gap-2">
+              <p className="text-sm font-semibold text-[14px] text-white">How it Works</p>
+            </div>
+            <ol className="mt-3 space-y-2 text-[14px] text-white/70">
+              <li>1. Step 1: Upload your resume.</li>
+              <li>2. Step 2: Upload a CSV or paste a LinkedIn job URL.</li>
+              <li>3. Click Process Jobs to score your fit based on alignment of skills.</li>
+              <li>4. Generate InMail + Cover Letter per fitted role. OPTIONAL: generate an email/cover letter for ANY job description.</li>
+              <li>5. Save and export curated roles.</li>
+              <li>
+                6. Use our{' '}
+                <button
+                  className="text-indigo-200 underline"
+                  onClick={() => {
+                    const element = document.getElementById('bookmarklet-section')
+                    if (element) element.scrollIntoView({ behavior: 'smooth' })
+                  }}
+                >
+                  bookmarklet
+                </button>{' '}
+                to create the LinkedIn CSV.
+              </li>
+            </ol>
+            <div className="mt-3 flex justify-end">
+              <button
+                className="rounded-xl border border-white/15 px-3 py-1 text-[11px] font-semibold text-white/70 hover:border-indigo-400/60 hover:text-white"
+                onClick={() => setInstructionsOpen(false)}
+              >
+                Hide
+              </button>
+            </div>
+          </div>
+        )}
+
+        <section className="mt-6 grid gap-6 lg:grid-cols-2">
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-5 shadow-lg shadow-indigo-900/40 backdrop-blur">
+            <p className="text-sm font-semibold text-white">Step 1: Upload Resume</p>
+            <p className="text-xs text-white/70">Upload your resume (PDF or DOCX) to extract your skills.</p>
+            <div className="mt-3">
+              <UploadZone
+                label="Choose File"
+                accept=".pdf,.doc,.docx,.txt"
+                inputKey={resumeInputKey}
+                onReset={() => {
+                  const next = resumeInputKey + 2
+                  console.info(`[UploadZone] resume reset to key=${next}`)
+                  setResumeInputKey(next)
+                }}
+                busy={loading.resume}
+                helper={resumeText ? 'Resume ready' : 'Upload resume to extract skills'}
+                onFile={handleResumeUpload}
+                filename={resumeFilename}
+              />
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-5 shadow-lg shadow-indigo-900/40 backdrop-blur">
+            <p className="text-sm font-semibold text-white">Step 2: Add LinkedIn Jobs</p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
               <button
                 onClick={() => setShowCsvUpload(true)}
                 className={`rounded-xl px-3 py-2 text-xs font-semibold transition ${
@@ -641,101 +786,164 @@ const UploadZone = ({
                 Single URL
               </button>
             </div>
-            {showCsvUpload ? (
-              <UploadZone
-                label="CSV of LinkedIn URLs"
-                accept=".csv,text/csv"
-                inputKey={csvInputKey}
-                onReset={() => {
-                  const next = csvInputKey + 2
-                  console.info(`[UploadZone] csv reset to key=${next}`)
-                  setCsvInputKey(next)
-                }}
-                busy={loading.csv}
-                helper={urls.length ? `${urls.length} URLs loaded` : "CSV should include a 'url' column"}
-                onFile={handleCsvUpload}
-              />
-            ) : (
-              <div className="block w-full rounded-2xl border border-white/10 bg-white/5 p-4 text-white transition hover:border-indigo-400/60 hover:bg-white/10">
-                <p className="text-sm font-semibold">Single LinkedIn URL</p>
-                <p className="text-xs text-white/70 mb-2">Paste a single job URL to process without CSV upload.</p>
-                <div className="flex flex-wrap gap-2">
+            <div className="mt-3">
+              {showCsvUpload ? (
+                <UploadZone
+                  label="Choose File"
+                  accept=".csv,text/csv"
+                  inputKey={csvInputKey}
+                  onReset={() => {
+                    const next = csvInputKey + 2
+                    console.info(`[UploadZone] csv reset to key=${next}`)
+                    setCsvInputKey(next)
+                  }}
+                  busy={loading.csv}
+                  helper={
+                    <>
+                      Upload a CSV containing LinkedIn job URLs. 
+                      See{' '}
+                      <button
+                        className="text-indigo-200 underline"
+                        onClick={() => {
+                          const element = document.getElementById('bookmarklet-section')
+                          if (element) element.scrollIntoView({ behavior: 'smooth' })
+                        }}
+                      >
+                        here
+                      </button>{' '}for example.
+                    </>
+                  }
+                  onFile={handleCsvUpload}
+                  filename={csvFilename}
+                />
+              ) : (
+                <div className="block w-full rounded-2xl border border-white/10 bg-white/5 p-4 text-white transition hover:border-indigo-400/60 hover:bg-white/10">
+                  <label className="text-xs text-white/70">Paste LinkedIn Job URL</label>
                   <input
                     value={singleUrl}
                     onChange={(e) => setSingleUrl(e.target.value)}
                     placeholder="https://www.linkedin.com/jobs/view/..."
-                    className="flex-1 min-w-[220px] rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-xs text-white/80 focus:outline-none focus:ring-2 focus:ring-indigo-400/60"
+                    className="mt-2 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-xs text-white/80 focus:outline-none focus:ring-2 focus:ring-indigo-400/60"
                   />
-                  <span className="text-xs text-white/60 self-center">Use Process Jobs below</span>
-                </div>
-              </div>
-            )}
-
-            <div className="flex flex-wrap items-center gap-3">
-              <button
-                onClick={processJobs}
-                disabled={loading.process || loading.single}
-                className="rounded-2xl bg-indigo-500 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-900/50 transition hover:bg-indigo-500/90 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {loading.process || loading.single ? 'Analyzing…' : 'Process Jobs'}
-              </button>
-              {resumeSkills.length > 0 && (
-                <div className="flex flex-wrap gap-2 text-xs text-white/70">
-                  <span className="rounded-full bg-white/10 px-3 py-1 font-semibold text-emerald-100">
-                    {resumeSkills.length} skills detected
-                  </span>
-                  <div className="flex flex-wrap gap-1">
-                    {resumeSkills.slice(0, 6).map((skill) => (
-                      <span key={skill} className="rounded-full bg-black/30 px-2 py-1">
-                        {skill}
-                      </span>
-                    ))}
-                    {resumeSkills.length > 6 && (
-                      <button
-                        className="text-white/50 underline underline-offset-2"
-                        onClick={() => setSkillsExpanded((prev) => !prev)}
-                      >
-                        {skillsExpanded ? 'less' : '+more'}
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )}
-              {skillsExpanded && (
-                <div className="max-h-48 w-full overflow-y-auto rounded-xl border border-white/10 bg-black/30 p-3 text-xs text-white/80">
-                  <div className="flex flex-wrap gap-2">
-                    {resumeSkills.map((skill) => (
-                      <span key={skill} className="rounded-full bg-white/10 px-2 py-1">
-                        {skill}
-                      </span>
-                    ))}
-                  </div>
                 </div>
               )}
             </div>
-            {error && <p className="text-sm text-rose-300">⚠ {error}</p>}
-            {message && <p className="text-sm text-emerald-200">{message}</p>}
+            <div className="mt-4 border-t border-white/10 pt-4 flex justify-center">
+              <button
+                onClick={processJobs}
+                disabled={loading.process || loading.single}
+                className="rounded-2xl bg-indigo-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-900/50 transition hover:bg-indigo-500/90 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {loading.process || loading.single ? 'Analyzing...' : 'Process Jobs'}
+              </button>
+            </div>
           </div>
 
-          <div className="rounded-3xl border border-white/10 bg-white/5 p-4 text-sm text-white/80 shadow-lg shadow-indigo-900/40 backdrop-blur">
-            <p className="text-xs uppercase tracking-[0.25em] text-white/60">How it works</p>
-            <ol className="mt-3 space-y-2">
-              <li>1) Upload your resume. </li>
-              <li>2) Upload a CSV containing LinkedIn job URLs OR paste in a single URL.</li>
-              <li>3) Click Process Jobs to score fit and see missing skills.</li>
-              <li>4) Generate InMail + Cover Letter per role.</li>
-              <li>5) Save and export curated roles.</li>
-              <li>
-                6) Use our <button className="text-indigo-200 underline" onClick={() => {
-                  const element = document.getElementById('bookmarklet-section')
-                  if (element) element.scrollIntoView({ behavior: 'smooth' })
-                }}>bookmarklet</button> below to create the LinkedIn CSV for upload.
-              </li>
-            </ol>
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-5 shadow-lg shadow-indigo-900/40 backdrop-blur lg:col-span-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-sm font-semibold text-white">OPTIONAL: Generate InMail + Cover Letter</p>
+                <p className="text-xs text-white/70">Custom create a cover letter/email for ANY job description using your uploaded resume.</p>
+              </div>
+                <button
+                  onClick={() => {
+                    if (customGeneratorOpen) {
+                      setCustomDescription('')
+                      setCustomOutput(null)
+                      setCustomGenerated(false)
+                    }
+                    setCustomGeneratorOpen((prev) => !prev)
+                  }}
+                  className="rounded-xl border border-white/15 px-3 py-2 text-xs font-semibold text-white/80 hover:border-indigo-400/60 hover:text-white"
+                >
+                  {customGeneratorOpen ? 'Close' : 'Open'}
+                </button>
+            </div>
           </div>
+
+          {error && <p className="text-sm text-rose-300 lg:col-span-2">{error}</p>}
+          {message && <p className="text-sm text-emerald-200 lg:col-span-2">{message}</p>}
         </section>
 
-        <section className="mt-8">
+        {customGeneratorOpen && (
+          <section className="mt-4 rounded-3xl border border-white/10 bg-white/5 p-6 text-sm text-white/80 shadow-lg shadow-indigo-900/40 backdrop-blur">
+            <h2 className="text-lg font-semibold text-white">Generate InMail + Cover Letter</h2>
+            <p className="mt-2 text-xs text-white/70">
+              Upload a resume, paste a job description, and generate custom outreach without running job scoring.
+            </p>
+            {customToast && (
+              <div className="mt-3 rounded-xl border border-emerald-400/30 bg-emerald-500/20 px-3 py-2 text-xs font-semibold text-emerald-100">
+                {customToast}
+              </div>
+            )}
+            <div className="mt-4 space-y-3">
+              <textarea
+                value={customDescription}
+                onChange={(e) => setCustomDescription(e.target.value)}
+                placeholder="Paste the full job description here"
+                rows={12}
+                className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-xs text-white/80 focus:outline-none focus:ring-2 focus:ring-indigo-400/60"
+              />
+              <div className="flex justify-center">
+                <button
+                  onClick={generateCustomMaterials}
+                  disabled={customLoading || customGenerated}
+                  className={`w-[30%] min-w-[180px] rounded-xl px-3 py-2 text-xs font-semibold shadow-md shadow-indigo-900/60 transition disabled:cursor-not-allowed ${
+                    customGenerated
+                      ? 'bg-white/10 text-white/50'
+                      : 'bg-indigo-500/80 text-white hover:bg-indigo-500 disabled:opacity-60'
+                  }`}
+                >
+                  {customLoading ? 'Generating…' : 'Generate InMail + Cover Letter'}
+                </button>
+              </div>
+            </div>
+            {customOutput && (
+              <div className="mt-4 grid gap-3">
+                <div className="rounded-2xl border border-white/10 bg-black/30 p-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs uppercase tracking-[0.2em] text-indigo-200/80">InMail</p>
+                    <button
+                      className="text-[11px] font-semibold text-indigo-200 hover:text-indigo-100"
+                      onClick={() => handleCustomCopy(customOutput.inmail, 'InMail')}
+                    >
+                      Copy
+                    </button>
+                  </div>
+                  <textarea
+                    className="mt-2 w-full rounded-xl border border-white/10 bg-black/40 p-2 text-sm text-white/80"
+                    rows={6}
+                    value={customOutput.inmail}
+                    onChange={(e) =>
+                      setCustomOutput((prev) => (prev ? { ...prev, inmail: e.target.value } : prev))
+                    }
+                  />
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-black/30 p-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs uppercase tracking-[0.2em] text-indigo-200/80">Cover Letter</p>
+                    <button
+                      className="text-[11px] font-semibold text-indigo-200 hover:text-indigo-100"
+                      onClick={() => handleCustomCopy(customOutput.cover_letter, 'Cover Letter')}
+                    >
+                      Copy
+                    </button>
+                  </div>
+                  <textarea
+                    className="mt-2 w-full rounded-xl border border-white/10 bg-black/40 p-2 text-sm text-white/80"
+                    rows={10}
+                    value={customOutput.cover_letter}
+                    onChange={(e) =>
+                      setCustomOutput((prev) => (prev ? { ...prev, cover_letter: e.target.value } : prev))
+                    }
+                  />
+                </div>
+              </div>
+            )}
+          </section>
+        )}
+
+                <section className="mt-8">
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-xl font-semibold text-white">Job Results</h2>
             <p className="text-sm text-white/60">{jobs.length ? `${jobs.length} roles analyzed` : 'Awaiting uploads'}</p>
@@ -808,12 +1016,18 @@ const UploadZone = ({
               <li>URL</li>
             </ul>
           </div>
-          <div className="mt-4">
+          <div className="mt-4 flex flex-wrap gap-2">
             <button
               className="rounded-lg border border-indigo-300/40 bg-indigo-500/20 px-3 py-2 text-xs font-semibold text-indigo-50 hover:bg-indigo-500/30"
               onClick={() => setShowBookmarklet(true)}
             >
               Copy bookmarklet code
+            </button>
+            <button
+              className="rounded-lg border border-indigo-300/40 bg-indigo-500/20 px-3 py-2 text-xs font-semibold text-indigo-50 hover:bg-indigo-500/30"
+              onClick={downloadSampleCsv}
+            >
+              Download sample CSV
             </button>
           </div>
         </section>

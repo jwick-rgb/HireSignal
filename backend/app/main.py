@@ -13,6 +13,7 @@ import httpx
 import logging
 from fastapi import Body, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 
@@ -22,6 +23,7 @@ DB_PATH = BASE_DIR / "db.json"
 INMAIL_TEMPLATE = ROOT_DIR / "templates" / "emails" / "inmail.md"
 COVER_TEMPLATE = ROOT_DIR / "templates" / "cover_letters" / "cover_letter.md"
 FETCHED_DIR = BASE_DIR / "fetched_pages"
+SAMPLE_CSV = ROOT_DIR / "templates" / "linked_in_csv" / "linkedin_jobs.csv"
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.2")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_TIMEOUT = float(os.getenv("OPENAI_TIMEOUT", "15"))
@@ -877,6 +879,17 @@ async def export_saved() -> dict:
         )
     csv_content = "\n".join(csv_lines)
     return {"csv": csv_content}
+
+
+@app.get("/sample/csv")
+async def download_sample_csv() -> FileResponse:
+    if not SAMPLE_CSV.exists():
+        raise HTTPException(status_code=404, detail="Sample CSV not found")
+    return FileResponse(
+        SAMPLE_CSV,
+        media_type="text/csv",
+        filename="linkedin_jobs.csv",
+    )
 
 
 if __name__ == "__main__":
