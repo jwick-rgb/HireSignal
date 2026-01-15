@@ -136,8 +136,9 @@ SKILL_KEYWORDS = [
     "customer analytics",
     "site reliability engineering",
     "sagemaker",
-    "RAG"
-    "compliance"
+    "RAG",
+    "compliance",
+    "orchestration"
 ]
 
 # Mock job records we can fall back to if fetching real content fails.
