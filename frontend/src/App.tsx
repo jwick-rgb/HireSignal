@@ -744,11 +744,11 @@ const UploadZone = ({
           <div className="rounded-2xl border border-white/10 bg-white/5 p-5 shadow-lg shadow-indigo-900/40 backdrop-blur">
             <p className="text-sm font-semibold text-white">Step 1: Upload Resume</p>
             <p className="text-xs text-white/70">Upload your resume (PDF or DOCX) to extract your skills.</p>
-            <div className="mt-3">
-              <UploadZone
-                label="Choose File"
-                accept=".pdf,.doc,.docx,.txt"
-                inputKey={resumeInputKey}
+              <div className="mt-3">
+                <UploadZone
+                  label="Choose File"
+                  accept=".pdf,.doc,.docx,.txt"
+                  inputKey={resumeInputKey}
                 onReset={() => {
                   const next = resumeInputKey + 2
                   console.info(`[UploadZone] resume reset to key=${next}`)
@@ -756,11 +756,44 @@ const UploadZone = ({
                 }}
                 busy={loading.resume}
                 helper={resumeText ? 'Resume ready' : 'Upload resume to extract skills'}
-                onFile={handleResumeUpload}
-                filename={resumeFilename}
-              />
+                  onFile={handleResumeUpload}
+                  filename={resumeFilename}
+                />
+              </div>
+              {resumeSkills.length > 0 && (
+                <div className="mt-4 flex flex-wrap gap-2 text-xs text-white/70">
+                  <span className="rounded-full bg-white/10 px-3 py-1 font-semibold text-emerald-100">
+                    {resumeSkills.length} skills detected
+                  </span>
+                  <div className="flex flex-wrap gap-1">
+                    {resumeSkills.slice(0, 6).map((skill) => (
+                      <span key={skill} className="rounded-full bg-black/30 px-2 py-1">
+                        {skill}
+                      </span>
+                    ))}
+                    {resumeSkills.length > 6 && (
+                      <button
+                        className="text-white/50 underline underline-offset-2"
+                        onClick={() => setSkillsExpanded((prev) => !prev)}
+                      >
+                        {skillsExpanded ? 'less' : '+more'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+              {skillsExpanded && (
+                <div className="mt-3 max-h-48 w-full overflow-y-auto rounded-xl border border-white/10 bg-black/30 p-3 text-xs text-white/80">
+                  <div className="flex flex-wrap gap-2">
+                    {resumeSkills.map((skill) => (
+                      <span key={skill} className="rounded-full bg-white/10 px-2 py-1">
+                        {skill}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
-          </div>
 
           <div className="rounded-2xl border border-white/10 bg-white/5 p-5 shadow-lg shadow-indigo-900/40 backdrop-blur">
             <p className="text-sm font-semibold text-white">Step 2: Add LinkedIn Jobs</p>
